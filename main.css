@@ -1,0 +1,176 @@
+/* Reset some default styles */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    body * {
+        font-family: GTWalsheim-Rg,GTWalsheim-Md,Rubik,system,Arial,sans-serif;
+        font-weight: normal;
+        font-feature-settings: "ss01";
+    
+    
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-height: 100vh;
+}
+
+/* Header styling */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    background-color: #333;
+    color: #fff;
+    width: 100%;
+}
+
+/* Logo styling */
+.logo img {
+    width: 100px; /* Adjust the logo size */
+}
+
+/* Navigation styling */
+nav ul {
+    list-style-type: none;
+    display: flex;
+    gap: 15px;
+}
+
+nav a {
+    color: #fff;
+    text-decoration: none;
+    font-weight: bold;
+}
+
+nav a:hover {
+    color: #f0a500; /* Hover color */
+}
+
+/* Combined container styling */
+.date-matches-container {
+    width: 100%;
+    max-width: 600px;
+    background-color: #333;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    margin: auto;
+}
+
+/* Date navigation styling */
+.date-navigation {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    background-color: #444;
+    padding: 10px 20px;
+    color: #fff;
+    margin: auto;
+    
+    
+}
+
+.live-btn, .calendar-btn {
+    background-color: #666;
+    color: #fff;
+    border: none;
+    padding: 5px 10px;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+}
+
+.date-list {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.date-item {
+    text-align: center;
+    color: #ccc;
+}
+
+.date-item.today {
+    color: #ff7300; /* Highlight color for Today */
+}
+
+.day-name{
+    font-size: 14px;
+}
+
+/* Matches section styling */
+.matches {
+    width: 100%;
+    background-color: #333;
+    color: #fff;
+}
+
+.league-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    background-color: #555;
+    color: #fff;
+}
+
+.flag {
+    width: 24px;
+    height: 16px;
+    margin-right: 10px;
+}
+
+.tip-header {
+    font-weight: bold;
+    color: #ccc;
+}
+
+.match-list {
+    width: 100%;
+}
+
+.match-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px;
+    border-bottom: 1px solid #444;
+}
+
+.match-item:last-child {
+    border-bottom: none;
+}
+
+.match-info {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+}
+
+.time, .team, .tip {
+    font-size: 14px;
+}
+
+.team {
+    flex-grow: 1;
+    text-align: center;
+    color: #ddd;
+}
+
+.tip {
+    width: 30px;
+    height: 30px;
+    background-color: #4da6ff;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    font-weight: bold;
+}
