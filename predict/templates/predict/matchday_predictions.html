@@ -1,0 +1,24 @@
+<table>
+    <thead>
+        <tr>
+            <th>Home Team</th>
+            <th>Away Team</th>
+            <th>Predicted Result</th>
+            <th>Predicted Home Goals</th>
+            <th>Predicted Away Goals</th>
+            <th>Average Goals</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for prediction in predictions %}
+        <tr>
+            <td>{{ prediction.home_team }}</td>
+            <td>{{ prediction.away_team }}</td>
+            <td>{{ prediction.predicted_result }}</td>
+            <td>{{ prediction.predicted_home_goals }}</td>
+            <td>{{ prediction.predicted_away_goals }}</td>
+            <td>{{ prediction.average_goals_category }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
