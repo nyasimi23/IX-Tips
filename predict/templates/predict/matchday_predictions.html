@@ -3,102 +3,193 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Matchday Predictions</title>
+    <title>Matchday Predictions - Live Score Style</title>
+
+    <!-- Include Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500&display=swap" rel="stylesheet">
 
     <!-- Optional: Add select2 for better dropdowns -->
     <link href="https://cdn.jsdelivr.net/npm/select2@4.0.13/dist/css/select2.min.css" rel="stylesheet" />
 
+    <!-- CSS for the UI -->
     <style>
         body {
-            font-family: Arial, sans-serif;
-            margin: 20px;
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
         }
-        form {
+
+        header {
+            background-color: #242424;
+            color: white;
+            padding: 15px 0;
+            text-align: center;
+        }
+
+        header h1 {
+            margin: 0;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1200px;
+            margin: 20px auto;
+        }
+
+        .matchday-form {
             margin-bottom: 20px;
-        }
-        select {
-            width: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 10px;
+            background-color: #ffffff;
             padding: 10px;
-            margin-right: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
         }
+
+        select, button {
+            padding: 10px;
+            font-size: 14px;
+            border-radius: 4px;
+            border: 1px solid #ddd;
+        }
+
         button {
-            padding: 10px 20px;
             background-color: #4CAF50;
             color: white;
-            border: none;
             cursor: pointer;
         }
+
         button:hover {
             background-color: #45a049;
         }
-        table {
+
+        .matches-list {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .match-card {
+            background-color: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+            display: flex;
+            flex-direction: column;
+            text-align: center;
+        }
+
+        .match-card .teams {
+            font-weight: bold;
+            margin: 10px 0;
+        }
+
+        .match-card .score {
+            font-size: 24px;
+            margin: 5px 0;
+        }
+
+        .match-card .prediction {
+            background-color: #eeeeee;
+            padding: 5px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .match-card .prediction p {
+            margin: 0;
+            font-size: 14px;
+        }
+
+        .match-card .result {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #333;
+        }
+
+        footer {
+            background-color: #242424;
+            color: white;
+            text-align: center;
+            padding: 10px 0;
+            position: fixed;
+            bottom: 0;
             width: 100%;
-            border-collapse: collapse;
+        }
+
+        .loading-spinner {
+            text-align: center;
+            font-size: 18px;
             margin-top: 20px;
-        }
-        th, td {
-            padding: 10px;
-            text-align: left;
-            border: 1px solid #ddd;
-        }
-        th {
-            background-color: #f2f2f2;
+            display: none;
         }
     </style>
 </head>
 <body>
 
-<h1>Matchday Predictions</h1>
+<header>
+    <h1>Live Matchday Predictions</h1>
+</header>
 
-<form method="POST" id="competition-form" action="{% url 'matchday_predictions' %}">
-    {% csrf_token %}
-    <label for="competition">Select Competition:</label>
-    <select id="competition" name="competition" required>
-        {% for code, name in competitions.items %}
-        <option value="{{ code }}">{{ name }}</option>
-        {% endfor %}
-    </select>
+<div class="container">
+    <!-- Competition & Matchday Selector -->
+    <div class="matchday-form">
+        <form method="POST" id="competition-form">
+            {% csrf_token %}
+            <select id="competition" name="competition" required>
+                {% for code, name in competitions.items %}
+                <option value="{{ code }}">{{ name }}</option>
+                {% endfor %}
+            </select>
 
-    <label for="matchday">Select Matchday:</label>
-    <select id="matchday" name="matchday" required>
-        {% for matchday in matchdays %}
-        <option value="{{ matchday }}">{{ matchday }}</option>
-        {% endfor %}
-    </select>
+            <select id="matchday" name="matchday" required>
+                {% for matchday in matchdays %}
+                <option value="{{ matchday }}">{{ matchday }}</option>
+                {% endfor %}
+            </select>
 
-    <button type="submit" id="submit-btn">Get Predictions</button>
-</form>
+            <button type="submit">Get Predictions</button>
+        </form>
+    </div>
 
-<!-- Loading Spinner -->
-<div id="loading-spinner" style="display: none;">Loading...</div>
+    <!-- Loading Spinner -->
+    <div class="loading-spinner" id="loading-spinner">Loading...</div>
 
-<!-- Predictions Table -->
-    <div id="predictions">
+    <!-- Predictions List -->
+    <div class="matches-list" id="matches-list">
         {% if predictions %}
-        <table>
-            <tr>
-                <th>Home Team</th>
-                <th>Away Team</th>
-                <th>Predicted Result</th>
-                <th>Home Goals</th>
-                <th>Away Goals</th>
-                <th>Average Goals</th>
-            </tr>
-            {% for prediction in predictions %}
-            <tr>
-                <td>{{ prediction.home_team }}</td>
-                <td>{{ prediction.away_team }}</td>
-                <td>{{ prediction.predicted_result }}</td>
-                <td>{{ prediction.predicted_home_goals }}</td>
-                <td>{{ prediction.predicted_away_goals }}</td>
-                <td>{{ prediction.average_goals_category }}</td>
-            </tr>
-            {% endfor %}
-        </table>
+        {% for prediction in predictions %}
+        <div class="match-card">
+            <div class="teams">
+                <div>{{ prediction.home_team }} vs {{ prediction.away_team }}</div>
+            </div>
+            <div class="score">
+                <p>Prediction: {{ prediction.predicted_result }}</p>
+            </div>
+            <div class="prediction">
+                
+                <p>Average Goals: {{ prediction.average_goals_category }}</p>
+            </div>
+            <div class="result">
+                Final Score Prediction: {{ prediction.predicted_home_goals }} - {{ prediction.predicted_away_goals }}
+            
+            <br>
+            <br>
+            </div>
+        </div>
+        {% endfor %}
         {% else %}
         <p>No predictions available.</p>
         {% endif %}
+    </div>
 </div>
+
+<footer>
+    <p>&copy; 2024 Matchday Predictions | All rights reserved</p>
+</footer>
 
 <!-- Include jQuery and select2 JS -->
 <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
@@ -111,16 +202,16 @@
 
         // Handle form submission
         $('#competition-form').on('submit', function(e) {
-            e.preventDefault(); // Prevent the default form submission
+            e.preventDefault(); // Prevent default form submission
 
             // Show loading spinner
             $('#loading-spinner').show();
-            $('#predictions').hide();
+            $('#matches-list').hide();
 
             var competition = $('#competition').val();
             var matchday = $('#matchday').val();
 
-            // AJAX request to submit the form data
+            // AJAX request to submit form data
             $.ajax({
                 type: 'POST',
                 url: $(this).attr('action'),
@@ -130,14 +221,9 @@
                     'matchday': matchday
                 },
                 success: function(response) {
-                    // Hide loading spinner
+                    // Hide loading spinner and show the match list
                     $('#loading-spinner').hide();
-
-                    // Show predictions table
-                    $('#predictions').show();
-                    
-                    // Update the table with predictions
-                    $('#predictions').html(response);
+                    $('#matches-list').html(response).show();
                 },
                 error: function() {
                     $('#loading-spinner').hide();
