@@ -45,7 +45,41 @@ def get_matchday_fixtures(competition_id, matchday):
     else:
         print(f"Error fetching matchday fixtures: {response.status_code} - {response.text}")
         return None
+def get_actual_results(competition_id, matchday):
+    """
+    Fetch actual results for a specific competition and matchday.
+    """
+    url = f"{BASE_URL}/competitions/{competition_id}/matches"
+    headers = {"X-Auth-Token": API_KEY}
+    params = {"matchday": matchday}
 
+    response = requests.get(url, headers=headers, params=params)
+
+    if response.status_code == 200:
+        matches = response.json().get("matches", [])
+        results = []
+        for match in matches:
+            home_team = match['homeTeam']['name']
+            away_team = match['awayTeam']['name']
+            if match['status'] == 'FINISHED':
+                full_time_score = match['score']['fullTime']
+                actual_result = (
+                    'Home' if full_time_score['home'] > full_time_score['away'] else
+                    'Away' if full_time_score['home'] < full_time_score['away'] else
+                    'Draw'
+                )
+                results.append({
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'actual_result': actual_result,
+                    'actual_home_goals': full_time_score.get('home'),
+                    'actual_away_goals': full_time_score.get('away'),
+                    'status': 'FINISHED'
+                })
+        return results
+    else:
+        print(f"Error fetching results: {response.status_code} - {response.text}")
+        return []
 # Preprocess match data
 def preprocess_api_data(api_df):
     api_df = api_df.dropna(subset=["Score"])
@@ -149,7 +183,8 @@ def matchday_predictions(request):
 
                 if matches:
                     all_seasons_data = []
-                    seasons = [2019, 2020, 2021, 2022, 2023]
+                    seasons = [2019, 2020, 2021, 2022, 2023, 2024] 
+                    actual_results = get_actual_results(competition, matchday)
                     
                     for season in seasons:
                         season_data = fetch_competition_matches(API_KEY, competition, season)  # Use selected competition
@@ -167,6 +202,13 @@ def matchday_predictions(request):
                         for match in matches:
                             home_team = match['homeTeam']['name']
                             away_team = match['awayTeam']['name']
+
+                            actual_match = next(
+                            (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
+                            None
+                        )
+
+                            actual_result = actual_match['actual_result'] if actual_match else None
 
                             predicted_result = predict_match_result(
                                 home_team, away_team, classifier_model, label_encoder_X, label_encoder_y_classification
@@ -190,9 +232,16 @@ def matchday_predictions(request):
                                 'home_team': home_team,
                                 'away_team': away_team,
                                 'predicted_result': predicted_result,
+                                'actual_result': actual_result,
                                 'predicted_home_goals': home_goals,
                                 'predicted_away_goals': away_goals,
-                                'average_goals_category': average_goals_category
+                                'average_goals_category': average_goals_category,
+                                'status': actual_match['status'] if actual_match else 'UNKNOWN',
+                                'match_status_color': (
+                                'green' if actual_result and actual_result == "SomePredictionLogic" else
+                                'red' if actual_result and actual_result != "SomePredictionLogic" else
+                                'grey'
+                            )
                             })
             except ValueError:
                 predictions = []

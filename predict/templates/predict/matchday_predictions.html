@@ -185,8 +185,35 @@
         <p>No predictions available.</p>
         {% endif %}
     </div>
+    
 </div>
-
+<div>
+    <table>
+        <tr>
+            <th>Home Team</th>
+            <th>Away Team</th>
+            <th>Predicted Result</th>
+            <th>Actual Result</th>
+            <th>Status</th>
+        </tr>
+        {% for prediction in predictions %}
+        <tr style="background-color: {{ prediction.match_status_color }};">
+            <td>{{ prediction.home_team }}</td>
+            <td>{{ prediction.away_team }}</td>
+            <td>{{ prediction.predicted_result }}</td>
+            <td>
+                {% if prediction.actual_result %}
+                    {{ prediction.actual_result }}
+                {% else %}
+                    N/A
+                {% endif %}
+            </td>
+            <td>{{ prediction.status }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    
+</div>
 <footer>
     <p>&copy; 2024 Matchday Predictions | All rights reserved</p>
 </footer>
