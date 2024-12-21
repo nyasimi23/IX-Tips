@@ -4,11 +4,12 @@ from sklearn.model_selection import train_test_split
 from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import LabelEncoder
 from django.shortcuts import render
+from datetime import datetime
 
 API_KEY = '7419be10abd14d7fb752e6fe6491e38f'
 BASE_URL = "https://api.football-data.org/v4"
 
-# Fetch matches for a given competition and season
+
 def fetch_competition_matches(api_key, competition_code, season):
     url = f"{BASE_URL}/competitions/{competition_code}/matches?season={season}"
     headers = {"X-Auth-Token": api_key}
@@ -27,23 +28,32 @@ def fetch_competition_matches(api_key, competition_code, season):
     else:
         return None
 
-def get_matchday_fixtures(competition_id, matchday):
-    url = f"{BASE_URL}/competitions/{competition_id}/matches"
-    headers = {"X-Auth-Token": API_KEY}
-    params = {"matchday": matchday}
+# Fetch matches by date
+def fetch_matches_by_date(api_key, competition_code, match_date):
+    url = f"{BASE_URL}/competitions/{competition_code}/matches"
+    headers = {"X-Auth-Token": api_key}
     
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        data = response.json()
-        return data['matches']  # Return the matches for the given matchday
-    else:
-        print(f"Error fetching matchday fixtures: {response.status_code} - {response.text}")
-        return None
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+        
+        matches = response.json().get("matches", [])
+        # Filter matches by the provided date
+        filtered_matches = [
+            match for match in matches 
+            if match.get("utcDate", "").startswith(match_date)
+        ]
+        return filtered_matches
 
-def get_actual_results(competition_id, matchday):
+    except requests.exceptions.RequestException as e:
+        # Log the error and return an empty list if the API call fails
+        print(f"Error fetching matches: {e}")
+        return []
+
+def get_actual_results(competition_id, match_date):
     url = f"{BASE_URL}/competitions/{competition_id}/matches"
     headers = {"X-Auth-Token": API_KEY}
-    params = {"matchday": matchday}
+    params = {"match_date": match_date}
     
     response = requests.get(url, headers=headers, params=params)
     if response.status_code == 200:
@@ -137,7 +147,6 @@ def safe_encode(team_name, label_encoder):
 
 # Main view
 def matchday_predictions(request):
-    matchdays = range(1, 39)  # Generate matchdays from 1 to 38
     competitions = {
         "PL": "Premier League",
         "PD": "La Liga",
@@ -153,23 +162,24 @@ def matchday_predictions(request):
         "CLI": "Copa Libertadores",
         "WC": "FIFA World Cup",
     }
-    
     predictions = []
-    
-    if request.method == "POST":
-        competition = request.POST.get("competition")
-        matchday = request.POST.get("matchday")
-        
-        if competition and matchday:
+
+    if request.method == "GET":
+        competition = request.GET.get("competition")
+        match_date = request.GET.get("date")
+
+        if competition and match_date:
             try:
-                matchday = int(matchday)
-                matches = get_matchday_fixtures(competition, matchday)
+                # Call fetch_matches_by_date with the date argument
+                matches = fetch_matches_by_date(API_KEY, competition, match_date)
+                
 
                 if matches:
                     all_seasons_data = []
                     seasons = [2019, 2020, 2021, 2022, 2023, 2024]
-                    actual_results = get_actual_results(competition, matchday)
-                    
+                    actual_results = get_actual_results(competition, match_date)
+                    # Process matches for predictions
+
                     for season in seasons:
                         season_data = fetch_competition_matches(API_KEY, competition, season)
                         if season_data is not None:
@@ -182,63 +192,68 @@ def matchday_predictions(request):
                         # Train models
                         regressor_models, label_encoder_X = train_models(processed_data)
 
-                        # Make predictions
-                        for match in matches:
-                            home_team = match['homeTeam']['name']
-                            away_team = match['awayTeam']['name']
 
-                            actual_match = next(
+                    for match in matches:
+                        home_team = match['homeTeam']['name']
+                        away_team = match['awayTeam']['name']
+                        match_status = match['status']
+
+                        actual_match = next(
                                 (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
                                 None
                             )
 
-                            actual_result = actual_match['actual_result'] if actual_match else None
-                            actual_home_goals = actual_match['actual_home_goals'] if actual_match else None
-                            actual_away_goals = actual_match['actual_away_goals'] if actual_match else None
-                            actual_score = f"{actual_home_goals} - {actual_away_goals}" if actual_match else "Not Played"
+                        actual_result = actual_match['actual_result'] if actual_match else None
+                        actual_home_goals = actual_match['actual_home_goals'] if actual_match else None
+                        actual_away_goals = actual_match['actual_away_goals'] if actual_match else None
+                        actual_score = f"{actual_home_goals} - {actual_away_goals}" if actual_match else "--"
 
-                            predicted_result, home_goals, away_goals = predict_match_outcome(
+                        predicted_result, home_goals, away_goals = predict_match_outcome(
                                 home_team, away_team, regressor_models, label_encoder_X
                             )
+                        predicted_score = f"{home_goals} - {away_goals}" 
+                        total_goals = home_goals + away_goals
+                        actual_total = actual_home_goals + actual_away_goals
 
-                            total_goals = home_goals + away_goals
+                        if actual_home_goals >= 1 and actual_away_goals >= 1:
+                                agg = "Yes"
+                        else:
+                                agg = "No"
 
-                            if home_goals >= 1 and away_goals >= 1:
+                        if home_goals >= 1 and away_goals >= 1:
                                 gg = "Yes"
-                            else:
+                        else:
                                 gg = "No"
 
-                            if total_goals < 2:
+                        if total_goals < 2:
                                 average_goals_category = "Under 1.5"
-                            elif total_goals == 2:
+                        else:
                                 average_goals_category = "Over 1.5"
-                            else:
-                                average_goals_category = "Over 2.5"
 
-                            predictions.append({
+                        if actual_total < 2:
+                                ov = "Under 1.5"
+                        else:
+                                ov = "Over 1.5"
+
+                        predictions.append({
                                 'home_team': home_team,
                                 'away_team': away_team,
                                 'predicted_result': predicted_result,
                                 'actual_result': actual_result,
-                                'predicted_home_goals': home_goals,
-                                'predicted_away_goals': away_goals,
-                                'actual_home_goals': actual_home_goals,
-                                'actual_away_goals': actual_away_goals,
+                                'predicted_score':predicted_score,
                                 'actual_score': actual_score,
                                 'gg': gg,
+                                'agg':agg,
+                                'ov':ov,
                                 'average_goals_category': average_goals_category,
-                                'status': actual_match['status'] if actual_match else 'UNKNOWN',
-                                'match_status_color': (
-                                    'green' if actual_result and actual_result == predicted_result else
-                                    'red' if actual_result and actual_result != predicted_result else
-                                    'grey'
-                                )
-                            })
-            except ValueError:
+                                'status': match_status,
+                        })
+            except Exception as e:
+                print(f"Error in matchday_predictions: {e}")
                 predictions = []
 
     return render(
         request,
         'predict/matchday_predictions.html',
-        {'matchdays': matchdays, 'competitions': competitions, 'predictions': predictions}
+        {'competitions': competitions, 'predictions': predictions}
     )
