@@ -1,7 +1,7 @@
 import requests
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from sklearn.tree import DecisionTreeClassifier, DecisionTreeRegressor
+from sklearn.tree import DecisionTreeRegressor
 from sklearn.preprocessing import LabelEncoder
 from django.shortcuts import render
 
@@ -28,33 +28,24 @@ def fetch_competition_matches(api_key, competition_code, season):
         return None
 
 def get_matchday_fixtures(competition_id, matchday):
-    """
-    Fetch fixtures for a specific competition and matchday.
-    """
     url = f"{BASE_URL}/competitions/{competition_id}/matches"
-    headers = {
-        "X-Auth-Token": API_KEY
-    }
+    headers = {"X-Auth-Token": API_KEY}
     params = {"matchday": matchday}
     
     response = requests.get(url, headers=headers, params=params)
-    
     if response.status_code == 200:
         data = response.json()
         return data['matches']  # Return the matches for the given matchday
     else:
         print(f"Error fetching matchday fixtures: {response.status_code} - {response.text}")
         return None
+
 def get_actual_results(competition_id, matchday):
-    """
-    Fetch actual results for a specific competition and matchday.
-    """
     url = f"{BASE_URL}/competitions/{competition_id}/matches"
     headers = {"X-Auth-Token": API_KEY}
     params = {"matchday": matchday}
-
+    
     response = requests.get(url, headers=headers, params=params)
-
     if response.status_code == 200:
         matches = response.json().get("matches", [])
         results = []
@@ -80,6 +71,7 @@ def get_actual_results(competition_id, matchday):
     else:
         print(f"Error fetching results: {response.status_code} - {response.text}")
         return []
+
 # Preprocess match data
 def preprocess_api_data(api_df):
     api_df = api_df.dropna(subset=["Score"])
@@ -95,9 +87,7 @@ def preprocess_api_data(api_df):
 
 # Train models for predictions
 def train_models(df):
-    # Prepare features and labels
     X = df[['Home Team', 'Away Team']]
-    y_classification = df['FTR']
     y_regression = df[['HomeGoals', 'AwayGoals']]
 
     # Encode team names
@@ -105,43 +95,38 @@ def train_models(df):
     X['Home Team'] = label_encoder_X.fit_transform(X['Home Team'])
     X['Away Team'] = label_encoder_X.transform(X['Away Team'])
 
-    # Encode classification labels
-    label_encoder_y_classification = LabelEncoder()
-    y_classification_encoded = label_encoder_y_classification.fit_transform(y_classification)
-
-    # Train classifier
-    X_train, X_test, y_train_classification, y_test_classification = train_test_split(
-        X, y_classification_encoded, test_size=0.2, random_state=42
-    )
-    classifier_model = DecisionTreeClassifier(random_state=42)
-    classifier_model.fit(X_train, y_train_classification)
-
     # Train regressors
-    X_train_reg, X_test_reg, y_train_regression, y_test_regression = train_test_split(
+    X_train, X_test, y_train_regression, y_test_regression = train_test_split(
         X, y_regression, test_size=0.2, random_state=42
     )
     regressor_models = {}
     for column in y_regression.columns:
         regressor_model = DecisionTreeRegressor(random_state=42)
-        regressor_model.fit(X_train_reg, y_train_regression[column])
+        regressor_model.fit(X_train, y_train_regression[column])
         regressor_models[column] = regressor_model
 
-    return classifier_model, label_encoder_y_classification, regressor_models, label_encoder_X
+    return regressor_models, label_encoder_X
 
-# Predict match results and goals
-def predict_match_result(home_team, away_team, classifier_model, label_encoder_X, label_encoder_y_classification):
+# Unified prediction for match result and goals
+def predict_match_outcome(home_team, away_team, regressor_models, label_encoder_X):
     home_team_encoded = safe_encode(home_team, label_encoder_X)
     away_team_encoded = safe_encode(away_team, label_encoder_X)
-    match_data = [[home_team_encoded, away_team_encoded]]
-    prediction = classifier_model.predict(match_data)
-    return label_encoder_y_classification.inverse_transform(prediction)[0]
 
-def predict_goals(home_team, away_team, regressor_models, label_encoder_X):
-    home_team_encoded = safe_encode(home_team, label_encoder_X)
-    away_team_encoded = safe_encode(away_team, label_encoder_X)
     match_data = [[home_team_encoded, away_team_encoded]]
-    predictions = {column: round(model.predict(match_data)[0]) for column, model in regressor_models.items()}
-    return predictions
+
+    # Predict goals
+    predicted_home_goals = round(regressor_models['HomeGoals'].predict(match_data)[0])
+    predicted_away_goals = round(regressor_models['AwayGoals'].predict(match_data)[0])
+
+    # Determine match result based on predicted goals
+    if predicted_home_goals > predicted_away_goals:
+        predicted_result = "Home"
+    elif predicted_home_goals < predicted_away_goals:
+        predicted_result = "Away"
+    else:
+        predicted_result = "Draw"
+
+    return predicted_result, predicted_home_goals, predicted_away_goals
 
 # Helper to handle unseen teams
 def safe_encode(team_name, label_encoder):
@@ -167,7 +152,6 @@ def matchday_predictions(request):
         "BSA": "Campeonato Brasileiro Série A",
         "CLI": "Copa Libertadores",
         "WC": "FIFA World Cup",
-
     }
     
     predictions = []
@@ -183,11 +167,11 @@ def matchday_predictions(request):
 
                 if matches:
                     all_seasons_data = []
-                    seasons = [2019, 2020, 2021, 2022, 2023, 2024] 
+                    seasons = [2019, 2020, 2021, 2022, 2023, 2024]
                     actual_results = get_actual_results(competition, matchday)
                     
                     for season in seasons:
-                        season_data = fetch_competition_matches(API_KEY, competition, season)  # Use selected competition
+                        season_data = fetch_competition_matches(API_KEY, competition, season)
                         if season_data is not None:
                             all_seasons_data.append(season_data)
 
@@ -196,7 +180,7 @@ def matchday_predictions(request):
                         processed_data = preprocess_api_data(all_seasons_df)
 
                         # Train models
-                        classifier_model, label_encoder_y_classification, regressor_models, label_encoder_X = train_models(processed_data)
+                        regressor_models, label_encoder_X = train_models(processed_data)
 
                         # Make predictions
                         for match in matches:
@@ -204,22 +188,25 @@ def matchday_predictions(request):
                             away_team = match['awayTeam']['name']
 
                             actual_match = next(
-                            (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
-                            None
-                        )
+                                (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
+                                None
+                            )
 
                             actual_result = actual_match['actual_result'] if actual_match else None
+                            actual_home_goals = actual_match['actual_home_goals'] if actual_match else None
+                            actual_away_goals = actual_match['actual_away_goals'] if actual_match else None
+                            actual_score = f"{actual_home_goals} - {actual_away_goals}" if actual_match else "Not Played"
 
-                            predicted_result = predict_match_result(
-                                home_team, away_team, classifier_model, label_encoder_X, label_encoder_y_classification
-                            )
-                            predicted_goals = predict_goals(
+                            predicted_result, home_goals, away_goals = predict_match_outcome(
                                 home_team, away_team, regressor_models, label_encoder_X
                             )
 
-                            home_goals = predicted_goals.get('HomeGoals', 0)
-                            away_goals = predicted_goals.get('AwayGoals', 0)
                             total_goals = home_goals + away_goals
+
+                            if home_goals >= 1 and away_goals >= 1:
+                                gg = "Yes"
+                            else:
+                                gg = "No"
 
                             if total_goals < 2:
                                 average_goals_category = "Under 1.5"
@@ -235,13 +222,17 @@ def matchday_predictions(request):
                                 'actual_result': actual_result,
                                 'predicted_home_goals': home_goals,
                                 'predicted_away_goals': away_goals,
+                                'actual_home_goals': actual_home_goals,
+                                'actual_away_goals': actual_away_goals,
+                                'actual_score': actual_score,
+                                'gg': gg,
                                 'average_goals_category': average_goals_category,
                                 'status': actual_match['status'] if actual_match else 'UNKNOWN',
                                 'match_status_color': (
-                                'green' if actual_result and actual_result == "SomePredictionLogic" else
-                                'red' if actual_result and actual_result != "SomePredictionLogic" else
-                                'grey'
-                            )
+                                    'green' if actual_result and actual_result == predicted_result else
+                                    'red' if actual_result and actual_result != predicted_result else
+                                    'grey'
+                                )
                             })
             except ValueError:
                 predictions = []
