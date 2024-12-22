@@ -64,6 +64,16 @@
             font-weight: bold;
         }
     </style>
+    <script>
+        // Set default date to today's date
+        window.addEventListener('DOMContentLoaded', () => {
+            const dateInput = document.getElementById('date');
+            if (dateInput) {
+                const today = new Date().toISOString().split('T')[0];
+                dateInput.value = today;
+            }
+        });
+    </script>
 </head>
 <body>
     <div class="container">
@@ -71,7 +81,7 @@
         <form method="get">
             <div class="form-group">
                 <label for="date">Select Date</label>
-                <input type="date" id="date" name="date" value="{{ date }}">
+                <input type="date" id="date" name="date">
             </div>
             <select id="competition" name="competition" class="form-select">
                 {% for code, name in competitions.items %}
@@ -83,22 +93,24 @@
 
         {% if predictions %}
         <table>
-            <thead>
+            <thead class="thead-dark">
                 <tr>
-                    <th>Competition</th>
-                    <th>Home Team</th>
-                    <th>Away Team</th>
-                    <th>Winner</th>
-                    <th>Score</th>
-                    <th>Over/Under</th>
-                    <th>GG</th>
-                    <th>Outcome</th>
-                    <th>Status</th>
+                    <th scope="col">SN</th>
+                    <th scope="col">Competition</th>
+                    <th scope="col">Home Team</th>
+                    <th scope="col">Away Team</th>
+                    <th scope="col">Winner</th>
+                    <th scope="col">Score</th>
+                    <th scope="col">Over/Under</th>
+                    <th scope="col">GG</th>
+                    <th scope="col">Outcome</th>
+                    <th scope="col">Status</th>
                 </tr>
             </thead>
             <tbody>
                 {% for prediction in predictions %}
                 <tr>
+                    <th scope="row">{{ forloop.counter }}</th>
                     <td>{{ prediction.competition }}</td>
                     <td>{{ prediction.home_team }}</td>
                     <td>{{ prediction.away_team }}</td>

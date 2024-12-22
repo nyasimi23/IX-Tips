@@ -51,35 +51,6 @@ def fetch_matches_by_date(api_key, competition_code, match_date):
         return []
 
 def get_actual_results(competition_id, match_date):
-    url = f"{BASE_URL}/competitions/{competition_id}/matches"
-    headers = {"X-Auth-Token": API_KEY}
-    params = {"match_date": match_date}
-    
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
-        matches = response.json().get("matches", [])
-        results = []
-        for match in matches:
-            home_team = match['homeTeam']['name']
-            away_team = match['awayTeam']['name']
-            if match['status'] == 'FINISHED':
-                full_time_score = match['score']['fullTime']
-                actual_result = (
-                    'Home' if full_time_score['home'] > full_time_score['away'] else
-                    'Away' if full_time_score['home'] < full_time_score['away'] else
-                    'Draw'
-                )
-                results.append({
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'actual_result': actual_result,
-                    'actual_home_goals': full_time_score.get('home'),
-                    'actual_away_goals': full_time_score.get('away'),
-                    'status': 'FINISHED'
-                })
-        return results
-    else:
-        print(f"Error fetching results: {response.status_code} - {response.text}")
         return []
 
 # Preprocess match data
@@ -124,6 +95,9 @@ def train_models(df):
 def predict_match_outcome(home_team, away_team, regressor_models, label_encoder_X):
     home_team_encoded = safe_encode(home_team, label_encoder_X)
     away_team_encoded = safe_encode(away_team, label_encoder_X)
+
+    if home_team_encoded == -1 or away_team_encoded == -1:
+        return "Error", 0, 0  # Default prediction for unseen teams
 
     match_data = [[home_team_encoded, away_team_encoded]]
 
