@@ -145,6 +145,7 @@ def safe_encode(team_name, label_encoder):
     except ValueError:
         return -1
 
+
 # Main view
 def matchday_predictions(request):
     competitions = {

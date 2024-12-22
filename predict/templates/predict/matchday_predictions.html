@@ -85,6 +85,7 @@
         <table>
             <thead>
                 <tr>
+                    <th>Competition</th>
                     <th>Home Team</th>
                     <th>Away Team</th>
                     <th>Winner</th>
@@ -98,6 +99,7 @@
             <tbody>
                 {% for prediction in predictions %}
                 <tr>
+                    <td>{{ prediction.competition }}</td>
                     <td>{{ prediction.home_team }}</td>
                     <td>{{ prediction.away_team }}</td>
                     <td class="{% if prediction.predicted_result == prediction.actual_result and prediction.status == 'FINISHED' %}correct{% else %}incorrect{% endif %}">
