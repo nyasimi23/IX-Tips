@@ -102,8 +102,10 @@ def train_models(df):
 
     # Encode team names
     label_encoder_X = LabelEncoder()
-    X['Home Team'] = label_encoder_X.fit_transform(X['Home Team'])
-    X['Away Team'] = label_encoder_X.transform(X['Away Team'])
+    label_encoder_X.fit(pd.concat([X['Home Team'], X['Away Team']]).unique())  # Fit on all unique team names
+
+    X['Home Team'] = X['Home Team'].apply(lambda team: safe_encode(team, label_encoder_X))
+    X['Away Team'] = X['Away Team'].apply(lambda team: safe_encode(team, label_encoder_X))
 
     # Train regressors
     X_train, X_test, y_train_regression, y_test_regression = train_test_split(
@@ -116,6 +118,7 @@ def train_models(df):
         regressor_models[column] = regressor_model
 
     return regressor_models, label_encoder_X
+
 
 # Unified prediction for match result and goals
 def predict_match_outcome(home_team, away_team, regressor_models, label_encoder_X):
@@ -137,6 +140,7 @@ def predict_match_outcome(home_team, away_team, regressor_models, label_encoder_
         predicted_result = "Draw"
 
     return predicted_result, predicted_home_goals, predicted_away_goals
+
 
 # Helper to handle unseen teams
 def safe_encode(team_name, label_encoder):
