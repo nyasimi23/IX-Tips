@@ -164,24 +164,29 @@ def matchday_predictions(request):
     }
     predictions = []
 
-    if request.method == "GET":
-        competition = request.GET.get("competition")
-        match_date = request.GET.get("date")
+    # Default to the current date
+    current_date = datetime.now().strftime("%Y-%m-%d")
 
-        if competition and match_date:
-            try:
-                # Call fetch_matches_by_date with the date argument
-                matches = fetch_matches_by_date(API_KEY, competition, match_date)
-                
+    if request.method == "GET":
+        # Retrieve competition and date from request
+        competition = request.GET.get("competition")
+        match_date = request.GET.get("date", current_date)  # Default to current_date if not provided
+
+        try:
+            # Determine competitions to process: all competitions if none is specified
+            competition_codes = [competition] if competition else list(competitions.keys())
+            
+            for comp_code in competition_codes:
+                matches = fetch_matches_by_date(API_KEY, comp_code, match_date)
 
                 if matches:
                     all_seasons_data = []
                     seasons = [2019, 2020, 2021, 2022, 2023, 2024]
-                    actual_results = get_actual_results(competition, match_date)
-                    # Process matches for predictions
+                    actual_results = get_actual_results(comp_code, match_date)
 
+                    # Process matches for predictions
                     for season in seasons:
-                        season_data = fetch_competition_matches(API_KEY, competition, season)
+                        season_data = fetch_competition_matches(API_KEY, comp_code, season)
                         if season_data is not None:
                             all_seasons_data.append(season_data)
 
@@ -192,16 +197,15 @@ def matchday_predictions(request):
                         # Train models
                         regressor_models, label_encoder_X = train_models(processed_data)
 
-
                     for match in matches:
                         home_team = match['homeTeam']['name']
                         away_team = match['awayTeam']['name']
                         match_status = match['status']
 
                         actual_match = next(
-                                (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
-                                None
-                            )
+                            (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
+                            None
+                        )
 
                         actual_result = actual_match['actual_result'] if actual_match else None
                         actual_home_goals = actual_match['actual_home_goals'] if actual_match else None
@@ -209,51 +213,37 @@ def matchday_predictions(request):
                         actual_score = f"{actual_home_goals} - {actual_away_goals}" if actual_match else "--"
 
                         predicted_result, home_goals, away_goals = predict_match_outcome(
-                                home_team, away_team, regressor_models, label_encoder_X
-                            )
-                        predicted_score = f"{home_goals} - {away_goals}" 
+                            home_team, away_team, regressor_models, label_encoder_X
+                        )
+                        predicted_score = f"{home_goals} - {away_goals}"
                         total_goals = home_goals + away_goals
-                        actual_total = actual_home_goals + actual_away_goals
+                        actual_total = actual_home_goals + actual_away_goals if actual_match else None
 
-                        if actual_home_goals >= 1 and actual_away_goals >= 1:
-                                agg = "Yes"
-                        else:
-                                agg = "No"
-
-                        if home_goals >= 1 and away_goals >= 1:
-                                gg = "Yes"
-                        else:
-                                gg = "No"
-
-                        if total_goals < 2:
-                                average_goals_category = "Under 1.5"
-                        else:
-                                average_goals_category = "Over 1.5"
-
-                        if actual_total < 2:
-                                ov = "Under 1.5"
-                        else:
-                                ov = "Over 1.5"
+                        agg = "Yes" if actual_home_goals and actual_away_goals and actual_home_goals >= 1 and actual_away_goals >= 1 else "No"
+                        gg = "Yes" if home_goals >= 1 and away_goals >= 1 else "No"
+                        average_goals_category = "Over 1.5" if total_goals >= 2 else "Under 1.5"
+                        ov = "Over 1.5" if actual_total and actual_total >= 2 else "Under 1.5"
 
                         predictions.append({
-                                'home_team': home_team,
-                                'away_team': away_team,
-                                'predicted_result': predicted_result,
-                                'actual_result': actual_result,
-                                'predicted_score':predicted_score,
-                                'actual_score': actual_score,
-                                'gg': gg,
-                                'agg':agg,
-                                'ov':ov,
-                                'average_goals_category': average_goals_category,
-                                'status': match_status,
+                            'competition': competitions[comp_code],  # Include competition name
+                            'home_team': home_team,
+                            'away_team': away_team,
+                            'predicted_result': predicted_result,
+                            'actual_result': actual_result,
+                            'predicted_score': predicted_score,
+                            'actual_score': actual_score,
+                            'gg': gg,
+                            'agg': agg,
+                            'ov': ov,
+                            'average_goals_category': average_goals_category,
+                            'status': match_status,
                         })
-            except Exception as e:
-                print(f"Error in matchday_predictions: {e}")
-                predictions = []
+        except Exception as e:
+            print(f"Error in matchday_predictions: {e}")
+            predictions = []
 
     return render(
         request,
         'predict/matchday_predictions.html',
-        {'competitions': competitions, 'predictions': predictions}
+        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date}
     )
