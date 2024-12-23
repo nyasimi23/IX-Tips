@@ -49,58 +49,6 @@ def fetch_matches_by_date(api_key, competition_code, match_date):
         print(f"Error fetching matches by date: {e}")
         return []
 
-<<<<<<< HEAD
-=======
-def get_actual_results(api_key, competition_code, match_date):
-    """
-    Fetches actual results of matches for a specific competition and date.
-
-    Parameters:
-    - api_key: API key for the football-data.org API.
-    - competition_code: The competition code (e.g., 'PL' for Premier League).
-    - match_date: The date of the matches in 'YYYY-MM-DD' format.
-
-    Returns:
-    - A list of dictionaries containing match results, including teams, scores, and status.
-    """
-    url = f"{BASE_URL}/competitions/{competition_code}/matches"
-    headers = {"X-Auth-Token": api_key}
-
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()  # Raise an exception for HTTP errors
-
-        matches = response.json().get("matches", [])
-        actual_results = []
-
-        # Filter matches by date and ensure they are finished
-        for match in matches:
-            if match.get("utcDate", "").startswith(match_date) and match["status"] == "FINISHED":
-                home_team = match["homeTeam"]["name"]
-                away_team = match["awayTeam"]["name"]
-                full_time_score = match["score"]["fullTime"]
-                actual_home_goals = full_time_score["home"]
-                actual_away_goals = full_time_score["away"]
-                actual_result = (
-                    "Home" if actual_home_goals > actual_away_goals
-                    else "Away" if actual_home_goals < actual_away_goals
-                    else "Draw"
-                )
-                actual_results.append({
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "actual_home_goals": actual_home_goals,
-                    "actual_away_goals": actual_away_goals,
-                    "actual_result": actual_result,
-                })
-
-        return actual_results
-
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching actual results: {e}")
-        return []
->>>>>>> main
-
 # Preprocess match data
 def preprocess_api_data(api_df):
     api_df = api_df.dropna(subset=["Score"])
@@ -219,6 +167,10 @@ def get_actual_results(api_key, competition_code, match_date):
 
 
 # Main view
+from django.shortcuts import render
+from datetime import datetime
+import pandas as pd
+
 def matchday_predictions(request):
     competitions = {
         "PL": "Premier League",
@@ -234,8 +186,8 @@ def matchday_predictions(request):
         "BSA": "Campeonato Brasileiro Série A",
         "CLI": "Copa Libertadores",
         "WC": "FIFA World Cup",
-        # Add more competitions as needed
     }
+
     predictions = []
     current_date = datetime.now().strftime("%Y-%m-%d")
     default_competition = "PL"
@@ -246,40 +198,21 @@ def matchday_predictions(request):
 
         competition_codes = [competition] if competition else list(competitions.keys())
 
-<<<<<<< HEAD
         for comp_code in competition_codes:
+            # Fetch all matches for the date
             matches = fetch_matches_by_date(API_KEY, comp_code, match_date)
             if not matches:
                 continue
-=======
-                if matches:
-                    all_seasons_data = []
-                    seasons = [2019, 2020, 2021, 2022, 2023, 2024]
-                    actual_results = get_actual_results(API_KEY, comp_code, match_date)
 
->>>>>>> main
-
-            # Fetch actual results from API
+            # Get actual results for the matches
             actual_results = get_actual_results(API_KEY, comp_code, match_date)
-
-            # Load historical data for predictions
-            seasons = [2019, 2020, 2021, 2022, 2023, 2024]
-            all_seasons_data = []
-            for season in seasons:
-                season_data = fetch_competition_matches(API_KEY, comp_code, season)
-                if season_data is not None:
-                    all_seasons_data.append(season_data)
-
-            if all_seasons_data:
-                all_seasons_df = pd.concat(all_seasons_data, ignore_index=True)
-                processed_data = preprocess_api_data(all_seasons_df)
-                regressor_models, label_encoder_X = train_models(processed_data)
 
             for match in matches:
                 home_team = match['homeTeam']['name']
                 away_team = match['awayTeam']['name']
                 match_status = match['status']
 
+                # Check for existing prediction in the database
                 prediction = MatchPrediction.objects.filter(
                     competition=competitions[comp_code],
                     home_team=home_team,
@@ -288,15 +221,19 @@ def matchday_predictions(request):
                 ).first()
 
                 if not prediction:
+                    # Generate prediction if not found
                     predicted_result, home_goals, away_goals = predict_match_outcome(
                         home_team, away_team, regressor_models, label_encoder_X
                     )
                     predicted_score = f"{home_goals} - {away_goals}"
 
-                    # Dynamically calculate GG and Average Goals Category based on predicted goals
+                    # Calculate additional fields
                     gg = "Yes" if home_goals >= 1 and away_goals >= 1 else "No"
-                    average_goals_category = "High" if (home_goals + away_goals) > 2.5 else "Low"
+                    average_goals_category = (
+                        "Over 1.5" if home_goals + away_goals >= 2 else "Under 1.5"
+                    )
 
+                    # Save the prediction to the database
                     prediction = MatchPrediction.objects.create(
                         competition=competitions[comp_code],
                         home_team=home_team,
@@ -307,91 +244,102 @@ def matchday_predictions(request):
                         status=match_status,
                     )
                 else:
-                    # If prediction exists, use its predicted score to calculate GG and Average Goals Category
+                    # Use existing prediction
                     predicted_score = prediction.predicted_score
-
-                    if predicted_score and " - " in predicted_score:
+                    if " - " in predicted_score:
                         try:
-                            predicted_score_split = predicted_score.split(" - ")
-                            home_goals = int(predicted_score_split[0].strip())
-                            away_goals = int(predicted_score_split[1].strip())
-
-                # Calculate fields based on predicted goals
-                            gg = "Yes" if home_goals >= 1 and away_goals >= 1 else "No"
-                            average_goals_category = "Over 1.5" if (home_goals + away_goals) >= 2 else "Under 1.5"
+                            home_goals, away_goals = map(int, predicted_score.split(" - "))
                         except ValueError:
-                # Handle invalid predicted_score gracefully
-                            home_goals = 0
-                            away_goals = 0
-                            gg = "N/A"
-                            average_goals_category = "N/A"
-                    else:
-            # Default values if predicted_score is invalid or missing
-                        home_goals = 0
-                        away_goals = 0
-                        gg = "N/A"
-                        average_goals_category = "N/A"
+                            home_goals, away_goals = 0, 0
 
-                # Retrieve actual results dynamically
+                        gg = "Yes" if home_goals >= 1 and away_goals >= 1 else "No"
+                        average_goals_category = (
+                            "Over 1.5" if home_goals + away_goals >= 2 else "Under 1.5"
+                        )
+                    else:
+                        home_goals, away_goals, gg, average_goals_category = 0, 0, "No", "Low"
+
+                # Get actual match results
                 actual_match = next(
-                    (r for r in actual_results if r['home_team'] == home_team and r['away_team'] == away_team),
-                    None
+                    (
+                        r for r in actual_results
+                        if r["home_team"] == home_team and r["away_team"] == away_team
+                    ),
+                    None,
                 )
 
                 if actual_match:
-                    actual_home_goals = actual_match['actual_home_goals']
-                    actual_away_goals = actual_match['actual_away_goals']
-                    actual_total_goals = actual_home_goals + actual_away_goals
-                    actual_result = actual_match['actual_result']
+                    actual_home_goals = actual_match["actual_home_goals"]
+                    actual_away_goals = actual_match["actual_away_goals"]
+                    actual_result = actual_match["actual_result"]
                     actual_score = f"{actual_home_goals} - {actual_away_goals}"
 
-                    # Dynamically calculate other fields based on actual goals
                     agg = "Yes" if actual_home_goals >= 1 and actual_away_goals >= 1 else "No"
-                    ov = "Over 1.5" if actual_total_goals >= 2 else "Under 1.5"
+                    ov = (
+                        "Over 1.5"
+                        if actual_home_goals + actual_away_goals >= 2
+                        else "Under 1.5"
+                    )
                 else:
-                    actual_result = None
-                    actual_score = "--"
-                    agg = "No"
-                    ov = "Under 1.5"
+                    actual_result, actual_score, agg, ov = None, "--", "No", "Under 1.5"
 
-                # Add to predictions list
+                # Add match prediction to the list
                 predictions.append({
-                    'competition': competitions[comp_code],
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'predicted_result': prediction.predicted_result,
-                    'actual_result': actual_result,  # Dynamically calculated
-                    'predicted_score': prediction.predicted_score,
-                    'actual_score': actual_score,  # Dynamically retrieved
-                    'gg': gg,  # Calculated from predicted goals
-                    'agg': agg,  # Calculated from actual goals
-                    'ov': ov,  # Calculated from actual goals
-                    'average_goals_category': average_goals_category,  # Calculated from predicted goals
-                    'status': match_status,
+                    "competition": competitions[comp_code],
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "predicted_result": prediction.predicted_result,
+                    "actual_result": actual_result,
+                    "predicted_score": predicted_score,
+                    "actual_score": actual_score,
+                    "gg": gg,
+                    "agg": agg,
+                    "ov": ov,
+                    "average_goals_category": average_goals_category,
+                    "status": match_status,
                 })
-    finished_games = [p for p in predictions if p['status'] == 'FINISHED']
+
+    # Calculate accuracy
+    finished_games = [p for p in predictions if p["status"] == "FINISHED"]
     total_finished = len(finished_games)
 
-    correct_results = sum(1 for p in finished_games if p['predicted_result'] == p['actual_result'])
-    correct_scores = sum(1 for p in finished_games if p['predicted_score'] == p['actual_score'])
-    correct_ov = sum(1 for p in finished_games if p['average_goals_category'] == p['ov'])
-    correct_gg = sum(1 for p in finished_games if p['gg'] == p['agg'])
+    correct_results = sum(1 for p in finished_games if p["predicted_result"] == p["actual_result"])
+    correct_scores = sum(1 for p in finished_games if p["predicted_score"] == p["actual_score"])
+    correct_ov = sum(1 for p in finished_games if p["average_goals_category"] == p["ov"])
+    correct_gg = sum(1 for p in finished_games if p["gg"] == p["agg"])
 
     accuracy = {
-        'result_accuracy': round((correct_results / total_finished) * 100, 2) if total_finished else 0,
-        'score_accuracy': round((correct_scores / total_finished) * 100, 2) if total_finished else 0,
-        'ov_accuracy': round((correct_ov / total_finished) * 100, 2) if total_finished else 0,
-        'gg_accuracy': round((correct_gg / total_finished) * 100, 2) if total_finished else 0,
-        'overall_accuracy': round(((correct_results + correct_scores + correct_ov + correct_gg) / (4 * total_finished)) * 100, 2) if total_finished else 0,
+        "result_accuracy": round((correct_results / total_finished) * 100, 2)
+        if total_finished
+        else 0,
+        "score_accuracy": round((correct_scores / total_finished) * 100, 2)
+        if total_finished
+        else 0,
+        "ov_accuracy": round((correct_ov / total_finished) * 100, 2)
+        if total_finished
+        else 0,
+        "gg_accuracy": round((correct_gg / total_finished) * 100, 2)
+        if total_finished
+        else 0,
+        "overall_accuracy": round(
+            (
+                (correct_results + correct_scores + correct_ov + correct_gg)
+                / (4 * total_finished)
+            )
+            * 100,
+            2,
+        )
+        if total_finished
+        else 0,
     }
-
 
     return render(
         request,
-        'predict/matchday_predictions.html',
-<<<<<<< HEAD
-        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date,  'accuracy': accuracy}
-=======
-        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date}
->>>>>>> main
+        "predict/matchday_predictions.html",
+        {
+            "competitions": competitions,
+            "predictions": predictions,
+            "current_date": current_date,
+            "accuracy": accuracy,
+        },
     )
