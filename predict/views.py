@@ -50,36 +50,53 @@ def fetch_matches_by_date(api_key, competition_code, match_date):
         print(f"Error fetching matches: {e}")
         return []
 
-def get_actual_results(competition_id, matchday):
-    url = f"{BASE_URL}/competitions/{competition_id}/matches"
-    headers = {"X-Auth-Token": API_KEY}
-    params = {"matchday": matchday}
-    
-    response = requests.get(url, headers=headers, params=params)
-    if response.status_code == 200:
+def get_actual_results(api_key, competition_code, match_date):
+    """
+    Fetches actual results of matches for a specific competition and date.
+
+    Parameters:
+    - api_key: API key for the football-data.org API.
+    - competition_code: The competition code (e.g., 'PL' for Premier League).
+    - match_date: The date of the matches in 'YYYY-MM-DD' format.
+
+    Returns:
+    - A list of dictionaries containing match results, including teams, scores, and status.
+    """
+    url = f"{BASE_URL}/competitions/{competition_code}/matches"
+    headers = {"X-Auth-Token": api_key}
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
         matches = response.json().get("matches", [])
-        results = []
+        actual_results = []
+
+        # Filter matches by date and ensure they are finished
         for match in matches:
-            home_team = match['homeTeam']['name']
-            away_team = match['awayTeam']['name']
-            if match['status'] == 'FINISHED':
-                full_time_score = match['score']['fullTime']
+            if match.get("utcDate", "").startswith(match_date) and match["status"] == "FINISHED":
+                home_team = match["homeTeam"]["name"]
+                away_team = match["awayTeam"]["name"]
+                full_time_score = match["score"]["fullTime"]
+                actual_home_goals = full_time_score["home"]
+                actual_away_goals = full_time_score["away"]
                 actual_result = (
-                    'Home' if full_time_score['home'] > full_time_score['away'] else
-                    'Away' if full_time_score['home'] < full_time_score['away'] else
-                    'Draw'
+                    "Home" if actual_home_goals > actual_away_goals
+                    else "Away" if actual_home_goals < actual_away_goals
+                    else "Draw"
                 )
-                results.append({
-                    'home_team': home_team,
-                    'away_team': away_team,
-                    'actual_result': actual_result,
-                    'actual_home_goals': full_time_score.get('home'),
-                    'actual_away_goals': full_time_score.get('away'),
-                    'status': 'FINISHED'
+                actual_results.append({
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "actual_home_goals": actual_home_goals,
+                    "actual_away_goals": actual_away_goals,
+                    "actual_result": actual_result,
                 })
-        return results
-    else:
-        print(f"Error fetching results: {response.status_code} - {response.text}")
+
+        return actual_results
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching actual results: {e}")
         return []
 
 # Preprocess match data
@@ -190,7 +207,8 @@ def matchday_predictions(request):
                 if matches:
                     all_seasons_data = []
                     seasons = [2019, 2020, 2021, 2022, 2023, 2024]
-                    actual_results = get_actual_results(comp_code, match_date)
+                    actual_results = get_actual_results(API_KEY, comp_code, match_date)
+
 
                     # Process matches for predictions
                     for season in seasons:
