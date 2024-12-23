@@ -310,9 +310,25 @@ def matchday_predictions(request):
                     'average_goals_category': average_goals_category,  # Calculated from predicted goals
                     'status': match_status,
                 })
+    finished_games = [p for p in predictions if p['status'] == 'FINISHED']
+    total_finished = len(finished_games)
+
+    correct_results = sum(1 for p in finished_games if p['predicted_result'] == p['actual_result'])
+    correct_scores = sum(1 for p in finished_games if p['predicted_score'] == p['actual_score'])
+    correct_ov = sum(1 for p in finished_games if p['average_goals_category'] == p['ov'])
+    correct_gg = sum(1 for p in finished_games if p['gg'] == p['agg'])
+
+    accuracy = {
+        'result_accuracy': round((correct_results / total_finished) * 100, 2) if total_finished else 0,
+        'score_accuracy': round((correct_scores / total_finished) * 100, 2) if total_finished else 0,
+        'ov_accuracy': round((correct_ov / total_finished) * 100, 2) if total_finished else 0,
+        'gg_accuracy': round((correct_gg / total_finished) * 100, 2) if total_finished else 0,
+        'overall_accuracy': round(((correct_results + correct_scores + correct_ov + correct_gg) / (4 * total_finished)) * 100, 2) if total_finished else 0,
+    }
+
 
     return render(
         request,
         'predict/matchday_predictions.html',
-        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date}
+        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date,  'accuracy': accuracy}
     )
