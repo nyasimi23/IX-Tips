@@ -49,6 +49,57 @@ def fetch_matches_by_date(api_key, competition_code, match_date):
         print(f"Error fetching matches by date: {e}")
         return []
 
+<<<<<<< HEAD
+=======
+def get_actual_results(api_key, competition_code, match_date):
+    """
+    Fetches actual results of matches for a specific competition and date.
+
+    Parameters:
+    - api_key: API key for the football-data.org API.
+    - competition_code: The competition code (e.g., 'PL' for Premier League).
+    - match_date: The date of the matches in 'YYYY-MM-DD' format.
+
+    Returns:
+    - A list of dictionaries containing match results, including teams, scores, and status.
+    """
+    url = f"{BASE_URL}/competitions/{competition_code}/matches"
+    headers = {"X-Auth-Token": api_key}
+
+    try:
+        response = requests.get(url, headers=headers)
+        response.raise_for_status()  # Raise an exception for HTTP errors
+
+        matches = response.json().get("matches", [])
+        actual_results = []
+
+        # Filter matches by date and ensure they are finished
+        for match in matches:
+            if match.get("utcDate", "").startswith(match_date) and match["status"] == "FINISHED":
+                home_team = match["homeTeam"]["name"]
+                away_team = match["awayTeam"]["name"]
+                full_time_score = match["score"]["fullTime"]
+                actual_home_goals = full_time_score["home"]
+                actual_away_goals = full_time_score["away"]
+                actual_result = (
+                    "Home" if actual_home_goals > actual_away_goals
+                    else "Away" if actual_home_goals < actual_away_goals
+                    else "Draw"
+                )
+                actual_results.append({
+                    "home_team": home_team,
+                    "away_team": away_team,
+                    "actual_home_goals": actual_home_goals,
+                    "actual_away_goals": actual_away_goals,
+                    "actual_result": actual_result,
+                })
+
+        return actual_results
+
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching actual results: {e}")
+        return []
+>>>>>>> main
 
 # Preprocess match data
 def preprocess_api_data(api_df):
@@ -195,10 +246,18 @@ def matchday_predictions(request):
 
         competition_codes = [competition] if competition else list(competitions.keys())
 
+<<<<<<< HEAD
         for comp_code in competition_codes:
             matches = fetch_matches_by_date(API_KEY, comp_code, match_date)
             if not matches:
                 continue
+=======
+                if matches:
+                    all_seasons_data = []
+                    seasons = [2019, 2020, 2021, 2022, 2023, 2024]
+                    actual_results = get_actual_results(API_KEY, comp_code, match_date)
+
+>>>>>>> main
 
             # Fetch actual results from API
             actual_results = get_actual_results(API_KEY, comp_code, match_date)
@@ -330,5 +389,9 @@ def matchday_predictions(request):
     return render(
         request,
         'predict/matchday_predictions.html',
+<<<<<<< HEAD
         {'competitions': competitions, 'predictions': predictions, 'current_date': current_date,  'accuracy': accuracy}
+=======
+        {'competitions': competitions, 'predictions': predictions, 'current_date': current_date}
+>>>>>>> main
     )
