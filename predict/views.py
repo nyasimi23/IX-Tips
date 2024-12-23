@@ -50,7 +50,36 @@ def fetch_matches_by_date(api_key, competition_code, match_date):
         print(f"Error fetching matches: {e}")
         return []
 
-def get_actual_results(competition_id, match_date):
+def get_actual_results(competition_id, matchday):
+    url = f"{BASE_URL}/competitions/{competition_id}/matches"
+    headers = {"X-Auth-Token": API_KEY}
+    params = {"matchday": matchday}
+    
+    response = requests.get(url, headers=headers, params=params)
+    if response.status_code == 200:
+        matches = response.json().get("matches", [])
+        results = []
+        for match in matches:
+            home_team = match['homeTeam']['name']
+            away_team = match['awayTeam']['name']
+            if match['status'] == 'FINISHED':
+                full_time_score = match['score']['fullTime']
+                actual_result = (
+                    'Home' if full_time_score['home'] > full_time_score['away'] else
+                    'Away' if full_time_score['home'] < full_time_score['away'] else
+                    'Draw'
+                )
+                results.append({
+                    'home_team': home_team,
+                    'away_team': away_team,
+                    'actual_result': actual_result,
+                    'actual_home_goals': full_time_score.get('home'),
+                    'actual_away_goals': full_time_score.get('away'),
+                    'status': 'FINISHED'
+                })
+        return results
+    else:
+        print(f"Error fetching results: {response.status_code} - {response.text}")
         return []
 
 # Preprocess match data
