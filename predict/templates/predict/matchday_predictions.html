@@ -63,6 +63,55 @@
             color: red;
             font-weight: bold;
         }
+        .accuracy-container {
+            margin-top: 20px;
+            font-size: 16px;
+            font-weight: bold;
+            color: #333;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        .progress-container {
+            display: flex;
+            justify-content: space-around;
+            margin: 20px 0;
+        }
+
+        .circle {
+            width: 100px;
+            height: 100px;
+            position: relative;
+            margin: 10px;
+        }
+
+        .circle .inner {
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background: conic-gradient(#007BFF var(--percentage), #e0e0e0 0);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            color: #333;
+            font-weight: bold;
+            font-size: 18px;
+            position: relative;
+        }
+
+        .circle .inner span {
+            position: absolute;
+        }
+
+        .circle-title {
+            text-align: center;
+            font-weight: bold;
+            margin-top: 10px;
+        }
+
     </style>
     <script>
         // Set default date to today's date
@@ -72,10 +121,23 @@
                 const today = new Date().toISOString().split('T')[0];
                 dateInput.value = today;
             }
+
+            // Add spinner functionality
+            const form = document.querySelector('form');
+            const spinnerOverlay = document.querySelector('.spinner-overlay');
+            
+            if (form && spinnerOverlay) {
+                form.addEventListener('submit', () => {
+                    spinnerOverlay.style.display = 'flex'; // Show spinner when form is submitted
+                });
+            }
         });
     </script>
 </head>
 <body>
+    <div class="spinner-overlay">
+        <div class="spinner"></div>
+    </div>
     <div class="container">
         <h1>IX-Tips</h1>
         <form method="get">
@@ -91,6 +153,39 @@
             <button type="submit" class="btn">Get Predictions</button>
         </form>
 
+        <div class="progress-container">
+            <div class="circle">
+                <div class="inner" style="--percentage: {{ accuracy.result_accuracy }}%;">
+                    <span>{{ accuracy.result_accuracy }}%</span>
+                </div>
+                <div class="circle-title">Winner</div>
+            </div>
+            <div class="circle">
+                <div class="inner" style="--percentage: {{ accuracy.score_accuracy }}%;">
+                    <span>{{ accuracy.score_accuracy }}%</span>
+                </div>
+                <div class="circle-title">Score</div>
+            </div>
+            <div class="circle">
+                <div class="inner" style="--percentage: {{ accuracy.ov_accuracy }}%;">
+                    <span>{{ accuracy.ov_accuracy }}%</span>
+                </div>
+                <div class="circle-title">Over/Under</div>
+            </div>
+            <div class="circle">
+                <div class="inner" style="--percentage: {{ accuracy.gg_accuracy }}%;">
+                    <span>{{ accuracy.gg_accuracy }}%</span>
+                </div>
+                <div class="circle-title">GG</div>
+            </div>
+            <div class="circle">
+                <div class="inner" style="--percentage: {{ accuracy.overall_accuracy }}%;">
+                    <span>{{ accuracy.overall_accuracy }}%</span>
+                </div>
+                <div class="circle-title">Overall</div>
+            </div>
+        </div>
+        <br></br>
         {% if predictions %}
         <table>
             <thead class="thead-dark">
