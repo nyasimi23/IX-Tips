@@ -1,90 +1,84 @@
-# IX-Tips
+# ⚽ IX-Tips – Football Prediction System
 
-## Overview
-The IX-Tips is a Django-based web application that provides predictions for football matches across various competitions. It fetches data from the Football Data API and uses machine learning models to predict match results and goal outcomes. The application also displays actual scores and results for matches that have already been played.
-
----
-
-## Features
-
-1. **Fetch Match Data**: Retrieves match fixtures for all supported competitions on a selected date.
-2. **Predictions**:
-   - Predicted match result (Home Win, Away Win, Draw).
-   - Predicted goals for both home and away teams.
-   - "GG" (Both Teams to Score) and Over/Under goal categories.
-3. **Actual Results**:
-   - Displays the actual result and score if the match has already been played.
-   - Highlights whether the prediction matches the actual result.
-4. **Dynamic Date Handling**:
-   - Allows users to select a specific date.
-   - Defaults to the current date if no date is selected.
-5. **Support for Multiple Competitions**:
-   - Includes competitions like Premier League, La Liga, Serie A, Bundesliga, UEFA Champions League, and more.
+**IX-Tips** is an intelligent football match prediction system built with **Django**, **Celery**, and **scikit-learn**. It fetches real-time fixtures, trains ML models using historical data, generates predictions, and displays daily tips with accuracy evaluation.
 
 ---
 
-## Prerequisites
+## 📌 Features
 
-1. Python 3.7+
-2. Django 3.2+
-3. Required Python Libraries:
-   - `pandas`
-   - `scikit-learn`
-   - `requests`
+- 🔮 Predict match outcomes using machine learning (RandomForest).
+- ⏰ Schedule automatic weekly predictions via **Celery**.
+- 🧠 Store and compare actual results vs predictions.
+- 🟢 Highlight correct, 🔴 incorrect, 🔵 upcoming predictions.
+- ⚙️ Admin dashboard with live prediction tools and metadata monitoring.
+- 📊 League table integration and tip filtering (e.g., Over 2.5, GG, 1X2).
+- 📅 Match calendar filtering with AJAX UI.
 
 ---
 
-## Installation
+## 🛠️ Technologies Used
 
-1. Clone the repository:
+- **Backend:** Django, Celery, Redis, SQLite
+- **Machine Learning:** scikit-learn (RandomForest, LabelEncoder)
+- **Frontend:** Bootstrap, jQuery, AJAX
+- **Data Source:** [football-data.org](https://football-data.org)
+
+---
+
+## 🚀 Setup Instructions
+
+### 1. Clone the project
+
    ```bash
    git clone https://github.com/nyasimi23/IX-Tips
    cd IX-Tips
    ```
 
-2. Install dependencies:
+### 2. Install dependencies:
    ```bash
+   python -m venv venv
+   source venv/bin/activate
    pip install -r requirements.txt
    ```
 
-3. Set up the Football Data API:
+### 3. Set up the Football Data API:
    - Obtain an API key from [Football Data](https://www.football-data.org/).
    - Replace `API_KEY` in the code with your API key.
 
-4. Run database migrations:
+### 4. Run database migrations:
    ```bash
    python manage.py migrate
    ```
 
-5. Start the development server:
+### 5. Start the development server:
    ```bash
    python manage.py runserver
    ```
 
-6. Access the application in your browser:
+### 6. Access the application in your browser:
    ```
    http://127.0.0.1:8000/
    ```
 
 ---
 
-## Usage
-
-1. **Home Page**:
-   - Use the date picker to select a specific date.
-   - Click "Get Predictions" to fetch match fixtures, predictions, and results for that date.
-
-2. **Predictions and Results**:
-   - View predicted results and goal counts for each match.
-   - Check actual scores and results for completed matches.
-   - Match status is color-coded:
-     - **Green**: Correct prediction.
-     - **Red**: Incorrect prediction.
-     - **Grey**: Match not yet played.
-
+## 🧵 Celery Integration
 ---
-
+### 1.Start a Redis server:
+```bash
+redis-server
+```
+#### 2.Start Celery worker:
+```bash
+celery -A IX_Tips worker -l info
+```
+### 3.Start Celery beat (optional for periodic tasks):
+```bash
+celery -A ix_tips beat -l info
+```
+---
 ## Supported Competitions
+---
 - Premier League (PL)
 - La Liga (PD)
 - Serie A (SA)
@@ -98,63 +92,91 @@ The IX-Tips is a Django-based web application that provides predictions for foot
 
 ---
 
-## File Structure
+🗓️ Scheduled Prediction
+---
+You can trigger weekly predictions manually from the Django shell:
+```bash
 
+python manage.py shell
 ```
-matchday-predictions/
-├── manage.py
-├── predict/
-│   ├── models.py
-│   ├── views.py
-│   ├── templates/
-│   │   └── predict/
-│   │       └── matchday_predictions_by_date.html
-├── static/
-├── requirements.txt
-└── README.md
+```bash
+from predict.tasks import schedule_predictions
+schedule_predictions.delay()
 ```
+Or stagger predictions for better load balance:
+```
+from predict.tasks import trigger_staggered_scheduling
+trigger_staggered_scheduling.delay()
+```
+---
+## 🎯 Prediction Logic
+---
+-Uses fetch_matches_by_date() to get upcoming fixtures.
 
+-Trains RandomForest models using historical data per competition.
+
+-Stores MatchPrediction with predicted scores.
+
+-Computes tips like 1, X, 2, GG, Over 2.5.
+
+-Evaluates correctness using actual scores if match is FINISHED.
 ---
 
-## Key Functions
+## 🧪 Generate Fake Data
+---
+Generate test predictions and top picks:
 
-### `fetch_competition_matches(api_key, competition_code, season)`
-Fetches match data for a given competition and season.
-
-### `get_actual_results(competition_id, matchday)`
-Retrieves actual results for a specific competition and matchday.
-
-### `train_models(df)`
-Trains machine learning models for predicting match results and goal counts.
-
-### `predict_match_outcome(home_team, away_team, classifier_model, regressor_models, label_encoder_X)`
-Predicts the match result and goal outcomes for a specific fixture.
-
-### `safe_encode(team_name, label_encoder)`
-Encodes team names while handling unseen teams.
-
+```bash
+python manage.py generate_fake_predictions --count 100
+```
+You can modify the date range in the command logic.
 ---
 
+## 📈 Admin Dashboard
+---
+Access /admin-dashboard/ to:
+
+-View Celery task status
+
+-Trigger live predictions
+
+-Monitor cache freshness
+
+-Manually run store_top_pick_for_date()
+
+---
+## 🔄 Update Match Status (TIMED / FINISHED)
+---
+Run this task daily via Celery or manually:
+```bash
+from predict.tasks import update_match_status_task
+update_match_status_task.delay()
+```
+---
+## 📦 Deployment Notes
+---
+Set DEBUG = False and configure ALLOWED_HOSTS in production.
+
+Use Gunicorn + NGINX for serving Django app.
+
+Set up supervisord or systemd for Celery workers.
+---
+## 📃 License
+---
+This project is licensed under the MIT License. See `LICENSE` for details.
+This project is for educational and personal use. Not affiliated with or endorsed by football-data.org.
+
+---
 ## API Reference
+---
 - **Football Data API**: [Documentation](https://www.football-data.org/documentation/quickstart)
 
 ---
 
-## To-Do
-
-1. Improve prediction accuracy by adding more features to the dataset.
-2. Add support for additional competitions.
-3. Enable user authentication for personalized predictions.
-4. Implement a caching mechanism to reduce API calls.
-
----
-
-## License
-This project is licensed under the MIT License. See `LICENSE` for details.
-
----
-
-## Acknowledgments
+## 🙌 Acknowledgments
+- Paul Santos
+- Job Nyasimi
+- Austine Ndula
 - [Football Data API](https://www.football-data.org/) for providing match data.
 - Open-source libraries and frameworks: Django, scikit-learn, pandas.
 
