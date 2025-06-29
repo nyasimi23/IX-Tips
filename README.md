@@ -1,38 +1,34 @@
-# IX-Tips
+# ⚽ IX-Tips – Football Match Prediction System
 
-## Overview
-The IX-Tips is a Django-based web application that provides predictions for football matches across various competitions. It fetches data from the Football Data API and uses machine learning models to predict match results and goal outcomes. The application also displays actual scores and results for matches that have already been played.
-
----
-
-## Features
-
-1. **Fetch Match Data**: Retrieves match fixtures for all supported competitions on a selected date.
-2. **Predictions**:
-   - Predicted match result (Home Win, Away Win, Draw).
-   - Predicted goals for both home and away teams.
-   - "GG" (Both Teams to Score) and Over/Under goal categories.
-3. **Actual Results**:
-   - Displays the actual result and score if the match has already been played.
-   - Highlights whether the prediction matches the actual result.
-4. **Dynamic Date Handling**:
-   - Allows users to select a specific date.
-   - Defaults to the current date if no date is selected.
-5. **Support for Multiple Competitions**:
-   - Includes competitions like Premier League, La Liga, Serie A, Bundesliga, UEFA Champions League, and more.
+**IX-Tips** is an intelligent football match prediction system built with **Django**, **Celery**, and **scikit-learn**. It fetches real-time fixtures, trains ML models using historical data, generates predictions, and displays daily tips with accuracy evaluation.
 
 ---
 
-## Prerequisites
+## 📌 Features
 
-1. Python 3.7+
-2. Django 3.2+
-3. Required Python Libraries:
-   - `pandas`
-   - `scikit-learn`
-   - `requests`
+- 🔮 Predict match outcomes using machine learning (RandomForest).
+- ⏰ Schedule automatic weekly predictions via **Celery**.
+- 🧠 Store and compare actual results vs predictions.
+- 🟢 Highlight correct, 🔴 incorrect, 🔵 upcoming predictions.
+- ⚙️ Admin dashboard with live prediction tools and metadata monitoring.
+- 📊 League table integration and tip filtering (e.g., Over 2.5, GG, 1X2).
+- 📅 Match calendar filtering with AJAX UI.
 
 ---
+
+## 🛠️ Technologies Used
+
+- **Backend:** Django, Celery, Redis, PostgreSQL/SQLite
+- **Machine Learning:** scikit-learn (RandomForest, LabelEncoder)
+- **Frontend:** Bootstrap, jQuery, AJAX
+- **Data Source:** [football-data.org](https://football-data.org)
+
+---
+
+## 🚀 Setup Instructions
+
+### 1. Clone the project
+
 
 ## Installation
 
