@@ -1,0 +1,145 @@
+{% load static %}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Top Picks - IX-Tips</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif; /* Consistent font */
+            background-color: #f8f9fa; /* Light background */
+        }
+        /* Custom styles for specific badge colors not directly in Tailwind's default palette */
+        .badge-info-custom { /* Custom badge color for 'TBD' */
+            background-color: #d1ecf1; /* Light blue */
+            color: #0c5460; /* Dark blue */
+        }
+    </style>
+    <!-- Flatpickr CSS for the date picker -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+</head>
+<body class="p-4 bg-gray-100 min-h-screen flex flex-col items-center">
+
+<div class="container mx-auto py-4 px-4 sm:px-6 lg:px-8 max-w-7xl w-full text-center">
+  <div class="flex flex-col sm:flex-row justify-between items-center mb-6"><a href="{% url 'predictions_view' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
+      bg-blue-600 text-white shadow-md hover:bg-blue-700">
+      View All Predictions
+    </a>
+   <center> <h4 class="text-3xl font-extrabold text-gray-800 mb-4 sm:mb-0 ">
+        <span class="text-red-500 ">🔥</span> Top Picks for {{ prediction.0.match_date|default:"Today" }}
+    </h4></center>
+    <div class="text-sm text-gray-600 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-200">
+        Source: <span class="font-semibold">{{ source|title }}</span>
+    </div>
+  </div>
+
+  <!-- Filter Controls -->
+  <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-8">
+    <form id="filter-form" method="get" class="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
+      <input type="text" id="date-picker" name="match_date" placeholder="Select Date"
+             class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
+             value="{{ match_date|default:'' }}" readonly>
+      
+      <select name="filter" 
+              class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
+              onchange="document.getElementById('filter-form').submit()">
+        <option value="">All Predictions</option>
+        <option value="1" {% if filter_label == "1" %}selected{% endif %}>Home Win (1)</option>
+        <option value="2" {% if filter_label == "2" %}selected{% endif %}>Away Win (2)</option>
+        <option value="X" {% if filter_label == "X" %}selected{% endif %}>Draw (X)</option>
+        <option value="GG" {% if filter_label == "GG" %}selected{% endif %}>Both Teams to Score (GG)</option>
+        <option value="Over 2.5" {% if filter_label == "Over 2.5" %}selected{% endif %}>Over 2.5 Goals</option>
+      </select>
+      
+      <!-- The explicit "Filter" button is removed as date/select changes will auto-submit -->
+    </form>
+
+    <a href="?past=1" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
+      bg-white border border-gray-400 text-gray-700 hover:bg-gray-50 shadow-sm">
+      View Past Tips
+    </a>
+    <a href="{% url 'top_picks' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
+      bg-white border border-red-400 text-red-600 hover:bg-red-50 shadow-sm">
+      Clear All Filters
+    </a>
+  </div>
+
+  <!-- Top Picks Cards -->
+  <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
+    {% if prediction %}
+      {% for p in prediction %}
+        <div class="relative p-6 rounded-xl shadow-lg border-l-4 transition-all duration-300 ease-in-out
+          {% if p.is_correct %}
+            border-green-500 bg-green-50 hover:shadow-xl hover:bg-green-100
+          {% elif p.actual_tip %}
+            border-red-500 bg-red-50 hover:shadow-xl hover:bg-red-100
+          {% else %}
+            border-blue-500 bg-blue-50 hover:shadow-xl hover:bg-blue-100
+          {% endif %}
+        ">
+          <div class="flex items-center justify-between mb-4 text-sm font-semibold text-gray-600">
+              <span>{{ p.match_date }}</span>
+              <span class="text-xs font-medium text-gray-500">Confidence: <span class="font-bold text-gray-800">{{ p.confidence }}%</span></span>
+          </div>
+          <div class="text-center mb-4">
+              <p class="text-xl font-extrabold text-gray-900 leading-tight">{{ p.home_team }} vs {{ p.away_team  }}</p>
+          </div>
+          <div class="text-center mb-4">
+              <p class="text-lg font-bold text-blue-700">Prediction: <span class="text-gray-900">{{ p.tip }}</span></p>
+          </div>
+
+          <div class="pt-4 border-t border-gray-200 text-center">
+            {% if p.actual_tip %}
+              <div class="flex justify-center items-center gap-2">
+                <span class="text-sm font-medium text-gray-600">Actual Result:</span>
+                <span class="inline-flex items-center px-3 py-0.5 rounded-full text-xs font-semibold
+                  {% if p.is_correct %}bg-green-200 text-green-800{% else %}bg-red-200 text-red-800{% endif %}">
+                  {{ p.actual_tip }}
+                </span>
+                {% if p.is_correct %}
+                  <span class="text-green-600 text-lg">✅</span>
+                {% else %}
+                  <span class="text-red-600 text-lg">❌</span>
+                {% endif %}
+              </div>
+              <p class="text-xs text-gray-500 mt-1">{{ p.status }}</p> {# Display status here for finished games #}
+            {% else %}
+              <div class="text-sm text-gray-500 flex items-center justify-center gap-1">
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                Not played yet
+              </div>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    {% else %}
+      <div class="col-span-full bg-white p-8 rounded-lg shadow-md text-center text-gray-500 text-lg">
+        No top picks found. Please check back later!
+      </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Flatpickr JS -->
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Flatpickr on the date input
+        flatpickr("#date-picker", {
+            dateFormat: "Y-m-d", // Standard date format for backend
+            altInput: true, // Show user-friendly date in input
+            altFormat: "F j, Y", // User-friendly format (e.g., July 26, 2025)
+            // Auto-submit the form when a date is selected or cleared
+            onChange: function(selectedDates, dateStr, instance) {
+                document.getElementById('filter-form').submit();
+            }
+        });
+    });
+</script>
+
+</body>
+</html>

@@ -1,0 +1,118 @@
+{% extends "predict/base.html" %}
+{% load static %}
+
+{% block title %}Live Predictions{% endblock %}
+
+{% block content %}
+			<div class="head-title">
+				<div class="left">
+					<h1>Admin Task Dashboard</h1>
+					<ul class="breadcrumb">
+						<li>
+							<a href="#">Dashboard</a>
+						</li>
+						<li><i class='bx bx-chevron-right' ></i></li>
+						<li>
+							<a class="active" href="#">Tasks</a>
+						</li>
+					</ul>
+				</div>
+				<a href="#" class="btn-download">
+					<i class='bx bxs-cloud-download bx-fade-down-hover' ></i>
+					<span class="text">Get PDF</span>
+				</a>
+			</div>
+<div class="table-data">
+
+  <!-- Scheduled Tasks -->
+  <div class="order mb-5">
+    <div class="head">
+      <h3>Scheduled Tasks</h3>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Task</th>
+          <th>Enabled</th>
+          <th>Schedule</th>
+          <th>Last Run</th>
+          <th>Last Triggered</th>
+          <th>Run Now</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+        <tr>
+          <td>{{ task.name }}</td>
+          <td>{{ task.task }}</td>
+          <td>
+            {% if task.enabled %}
+            <span class="status completed">Enabled</span>
+            {% else %}
+            <span class="status pending">Disabled</span>
+            {% endif %}
+          </td>
+          <td>{% if task.interval %} Interval {% elif task.crontab %} Crontab {% else %} None {% endif %}</td>
+          <td>{{ task.last_run_at|default:"Never" }}</td>
+          <td>{{ task.last_triggered|default:"Never" }}</td>
+          <td>
+            <form method="POST" action="{% url 'trigger_task_now' %}">
+              {% csrf_token %}
+              <input type="hidden" name="task_path" value="{{ task.task }}">
+              <button type="submit" class="btn btn-primary">Run</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- Cached Training Data -->
+  <div class="order">
+    <div class="head">
+      <h3>Cached Training Data</h3>
+    </div>
+    <table>
+      <thead>
+        <tr>
+          <th>Competition</th>
+          <th>Cached?</th>
+          <th>Entries</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for cache in cache_info %}
+        <tr>
+          <td>{{ cache.competition }}</td>
+          <td>
+            {% if cache.cached %}
+            <span class="status completed">Yes</span>
+            {% else %}
+            <span class="status pending">No</span>
+            {% endif %}
+          </td>
+          <td>{{ cache.entries }}</td>
+          <td>
+            <form method="POST" action="{% url 'refresh_cache_now' %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="competition" value="{{ cache.competition }}">
+              <button type="submit" class="btn btn-info btn-sm">Refresh</button>
+            </form>
+            <form method="POST" action="{% url 'clear_cache_now' %}" style="display:inline;">
+              {% csrf_token %}
+              <input type="hidden" name="competition" value="{{ cache.competition }}">
+              <button type="submit" class="btn btn-danger btn-sm">Clear</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+</div>
+{% endblock %}
+

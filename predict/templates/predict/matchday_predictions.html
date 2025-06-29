@@ -2,8 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>IX-Tips</title>
+    <title>IX-Tips Predictions</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -14,222 +13,53 @@
             border-collapse: collapse;
             margin-top: 20px;
         }
-        table, th, td {
-            border: 1px solid #ccc;
-        }
         th, td {
-            padding: 10px;
-            text-align: left;
+            padding: 12px;
+            border: 1px solid #ccc;
+            text-align: center;
         }
         th {
-            background-color: #f4f4f4;
+            background-color: #f0f0f0;
         }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        .form-group label {
-            font-weight: bold;
-            display: block;
-        }
-        .form-group input {
-            padding: 8px;
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .btn {
-            background-color: #007BFF;
-            color: #fff;
-            padding: 10px 20px;
-            border: none;
-            cursor: pointer;
-        }
-        .btn:hover {
-            background-color: #0056b3;
-        }
-        .message {
-            margin-top: 20px;
-            font-style: italic;
-            color: #666;
-        }
-        .correct {
-            color: green;
-            font-weight: bold;
-        }
-        .incorrect {
-            color: red;
-            font-weight: bold;
-        }
-        .accuracy-container {
-            margin-top: 20px;
-            font-size: 16px;
-            font-weight: bold;
-            color: #333;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-
-        .progress-container {
-            display: flex;
-            justify-content: space-around;
-            margin: 20px 0;
-        }
-
-        .circle {
-            width: 100px;
-            height: 100px;
-            position: relative;
-            margin: 10px;
-        }
-
-        .circle .inner {
-            width: 100%;
-            height: 100%;
-            border-radius: 50%;
-            background: conic-gradient(#007BFF var(--percentage), #e0e0e0 0);
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            color: #333;
-            font-weight: bold;
-            font-size: 18px;
-            position: relative;
-        }
-
-        .circle .inner span {
-            position: absolute;
-        }
-
-        .circle-title {
-            text-align: center;
-            font-weight: bold;
-            margin-top: 10px;
-        }
-
     </style>
-    <script>
-        // Set default date to today's date
-        window.addEventListener('DOMContentLoaded', () => {
-            const dateInput = document.getElementById('date');
-            if (dateInput) {
-                const today = new Date().toISOString().split('T')[0];
-                dateInput.value = today;
-            }
-
-            // Add spinner functionality
-            const form = document.querySelector('form');
-            const spinnerOverlay = document.querySelector('.spinner-overlay');
-            
-            if (form && spinnerOverlay) {
-                form.addEventListener('submit', () => {
-                    spinnerOverlay.style.display = 'flex'; // Show spinner when form is submitted
-                });
-            }
-        });
-    </script>
 </head>
 <body>
-    <div class="spinner-overlay">
-        <div class="spinner"></div>
-    </div>
-    <div class="container">
-        <h1>IX-Tips</h1>
-        <form method="get">
-            <div class="form-group">
-                <label for="date">Select Date</label>
-                <input type="date" id="date" name="date">
-            </div>
-            <select id="competition" name="competition" class="form-select">
-                {% for code, name in competitions.items %}
-                <option value="{{ code }}">{{ name }}</option>
-                {% endfor %}
-            </select>
-            <button type="submit" class="btn">Get Predictions</button>
-        </form>
+    <h1>Upcoming Match Predictions</h1>
+    <a href="{% url 'results' %}">Results----</a>
+    {% if error %}
+    <p style="color: red;">{{ error }}</p>
+    <a href="{% url 'train_model' %}">Train model now for this competition?</a>
+{% endif %}
 
-        <div class="progress-container">
-            <div class="circle">
-                <div class="inner" style="--percentage: {{ accuracy.result_accuracy }}%;">
-                    <span>{{ accuracy.result_accuracy }}%</span>
-                </div>
-                <div class="circle-title">Winner</div>
-            </div>
-            <div class="circle">
-                <div class="inner" style="--percentage: {{ accuracy.score_accuracy }}%;">
-                    <span>{{ accuracy.score_accuracy }}%</span>
-                </div>
-                <div class="circle-title">Score</div>
-            </div>
-            <div class="circle">
-                <div class="inner" style="--percentage: {{ accuracy.ov_accuracy }}%;">
-                    <span>{{ accuracy.ov_accuracy }}%</span>
-                </div>
-                <div class="circle-title">Over/Under</div>
-            </div>
-            <div class="circle">
-                <div class="inner" style="--percentage: {{ accuracy.gg_accuracy }}%;">
-                    <span>{{ accuracy.gg_accuracy }}%</span>
-                </div>
-                <div class="circle-title">GG</div>
-            </div>
-            <div class="circle">
-                <div class="inner" style="--percentage: {{ accuracy.overall_accuracy }}%;">
-                    <span>{{ accuracy.overall_accuracy }}%</span>
-                </div>
-                <div class="circle-title">Overall</div>
-            </div>
-        </div>
-        <br></br>
-        {% if predictions %}
+
+
+    {% if matches %}
         <table>
-            <thead class="thead-dark">
+            <thead>
                 <tr>
-                    <th scope="col">SN</th>
-                    <th scope="col">Competition</th>
-                    <th scope="col">Home Team</th>
-                    <th scope="col">Away Team</th>
-                    <th scope="col">Winner</th>
-                    <th scope="col">Score</th>
-                    <th scope="col">Over/Under</th>
-                    <th scope="col">GG</th>
-                    <th scope="col">Outcome</th>
-                    <th scope="col">Status</th>
+                    <th>Date</th>
+                    <th>Competition</th>
+                    <th>Match</th>
+                    <th>Predicted Result</th>
+                    <th>Predicted Score</th>
+                    <th>Status</th>
                 </tr>
             </thead>
             <tbody>
-                {% for prediction in predictions %}
+                {% for match in matches %}
                 <tr>
-                    <th scope="row">{{ forloop.counter }}</th>
-                    <td>{{ prediction.competition }}</td>
-                    <td>{{ prediction.home_team }}</td>
-                    <td>{{ prediction.away_team }}</td>
-                    <td class="{% if prediction.predicted_result == prediction.actual_result and prediction.status == 'FINISHED' %}correct{% else %}incorrect{% endif %}">
-                        {{ prediction.predicted_result }}
-                    </td>
-                    <td class="{% if prediction.predicted_score == prediction.actual_score and prediction.status == 'FINISHED' %}correct{% else %}incorrect{% endif %}">
-                        {{ prediction.predicted_score }}
-                    </td>
-                    <td class="{% if prediction.average_goals_category == prediction.ov and prediction.status == 'FINISHED' %}correct{% else %}incorrect{% endif %}">
-                        {{ prediction.average_goals_category }}
-                    </td>
-                    <td class="{% if prediction.gg == prediction.agg and prediction.status == 'FINISHED' %}correct{% else %}incorrect{% endif %}">
-                        {{ prediction.gg }}
-                    </td>
-                    <td>{{ prediction.actual_score }}</td>
-                    <td>{{ prediction.status }}</td>
+                    <td>{{ match.match_date }}</td>
+                    <td>{{ match.competition }}</td>
+                    <td>{{ match.home_team }} vs {{ match.away_team }}</td>
+                    <td>{{ match.predicted_result }}</td>
+                    <td>{{ match.predicted_home_goals }} - {{ match.predicted_away_goals }}</td>
+                    <td>{{ match.status }}</td>
                 </tr>
                 {% endfor %}
             </tbody>
         </table>
-        {% else %}
-        <p class="message">No predictions available for the selected date.</p>
-        {% endif %}
-    </div>
+    {% else %}
+        <p>No upcoming predictions available.</p>
+    {% endif %}
 </body>
 </html>
