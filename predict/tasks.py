@@ -234,12 +234,9 @@ def update_metadata_task():
 
 @shared_task
 def store_daily_top_pick():
-    from datetime import date
-    from .utils import get_top_predictions
-
-    today = date.today()
+    from .utils import get_top_predictions  # your prediction logic
     predictions = get_top_predictions(limit=10)
-    store_top_pick_for_date(predictions, today)
+    store_top_pick_for_date(predictions)
 
 @shared_task
 def update_match_status_task():

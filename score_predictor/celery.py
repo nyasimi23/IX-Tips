@@ -43,10 +43,6 @@ app.conf.beat_schedule = {
         "task": "predict.tasks.update_metadata_task",
         "schedule": crontab(minute=0, hour='*'),  # every hour
     },
-    'store-daily-top-pick': {
-        'task': 'predict.tasks.store_daily_top_pick',
-        'schedule': crontab(hour=1, minute=0),  # Every day at 1:00 AM
-    },
     'update-match-status-daily': {
         'task': 'predict.tasks.update_match_status_task',
         'schedule': crontab(hour=2, minute=0),  # runs daily at 2:00 AM

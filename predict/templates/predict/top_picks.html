@@ -6,32 +6,39 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Top Picks - IX-Tips</title>
-    <!-- Tailwind CSS CDN -->
+    
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Flatpickr CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+
     <style>
         body {
-            font-family: 'Inter', sans-serif; /* Consistent font */
-            background-color: #f8f9fa; /* Light background */
+            font-family: 'Inter', sans-serif;
+            background-color: #f8f9fa;
         }
-        /* Custom styles for specific badge colors not directly in Tailwind's default palette */
-        .badge-info-custom { /* Custom badge color for 'TBD' */
-            background-color: #d1ecf1; /* Light blue */
-            color: #0c5460; /* Dark blue */
+        .badge-info-custom {
+            background-color: #d1ecf1;
+            color: #0c5460;
         }
     </style>
-    <!-- Flatpickr CSS for the date picker -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 </head>
+
 <body class="p-4 bg-gray-100 min-h-screen flex flex-col items-center">
 
 <div class="container mx-auto py-4 px-4 sm:px-6 lg:px-8 max-w-7xl w-full text-center">
-  <div class="flex flex-col sm:flex-row justify-between items-center mb-6"><a href="{% url 'predictions_view' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
-      bg-blue-600 text-white shadow-md hover:bg-blue-700">
+  
+  <!-- Header Section -->
+  <div class="flex flex-col sm:flex-row justify-between items-center mb-6">
+    <a href="{% url 'predictions_view' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 bg-blue-600 text-white shadow-md hover:bg-blue-700">
       View All Predictions
     </a>
-   <center> <h4 class="text-3xl font-extrabold text-gray-800 mb-4 sm:mb-0 ">
-        <span class="text-red-500 ">🔥</span> Top Picks for {{ prediction.0.match_date|default:"Today" }}
-    </h4></center>
+
+    <h4 class="text-3xl font-extrabold text-gray-800 mb-4 sm:mb-0 text-center">
+      <span class="text-red-500">🔥</span> Top Picks for {{ selected_date|date:"F j, Y" }}
+    </h4>
+
     <div class="text-sm text-gray-600 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-200">
         Source: <span class="font-semibold">{{ source|title }}</span>
     </div>
@@ -42,7 +49,7 @@
     <form id="filter-form" method="get" class="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
       <input type="text" id="date-picker" name="match_date" placeholder="Select Date"
              class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-             value="{{ match_date|default:'' }}" readonly>
+             value="{{ selected_date|date:'Y-m-d' }}" readonly>
       
       <select name="filter" 
               class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
@@ -54,21 +61,21 @@
         <option value="GG" {% if filter_label == "GG" %}selected{% endif %}>Both Teams to Score (GG)</option>
         <option value="Over 2.5" {% if filter_label == "Over 2.5" %}selected{% endif %}>Over 2.5 Goals</option>
       </select>
-      
-      <!-- The explicit "Filter" button is removed as date/select changes will auto-submit -->
     </form>
 
-    <a href="?past=1" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
-      bg-white border border-gray-400 text-gray-700 hover:bg-gray-50 shadow-sm">
+    <a href="?past=1" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 bg-white border border-gray-400 text-gray-700 hover:bg-gray-50 shadow-sm">
       View Past Tips
     </a>
-    <a href="{% url 'top_picks' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105
-      bg-white border border-red-400 text-red-600 hover:bg-red-50 shadow-sm">
+    
+
+    <a href="{% url 'top_picks' %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 bg-white border border-red-400 text-red-600 hover:bg-red-50 shadow-sm">
       Clear All Filters
     </a>
   </div>
+<a href="{% url 'export_top_picks' format='csv' %}?match_date={{ selected_date }}" class="btn">Export CSV</a>
+<a href="{% url 'export_top_picks' format='pdf' %}?match_date={{ selected_date }}" class="btn">Export PDF</a>
 
-  <!-- Top Picks Cards -->
+  <!-- Top Picks Display -->
   <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
     {% if prediction %}
       {% for p in prediction %}
@@ -86,7 +93,7 @@
               <span class="text-xs font-medium text-gray-500">Confidence: <span class="font-bold text-gray-800">{{ p.confidence }}%</span></span>
           </div>
           <div class="text-center mb-4">
-              <p class="text-xl font-extrabold text-gray-900 leading-tight">{{ p.home_team }} vs {{ p.away_team  }}</p>
+              <p class="text-xl font-extrabold text-gray-900 leading-tight">{{ p.home_team }} vs {{ p.away_team }}</p>
           </div>
           <div class="text-center mb-4">
               <p class="text-lg font-bold text-blue-700">Prediction: <span class="text-gray-900">{{ p.tip }}</span></p>
@@ -106,10 +113,12 @@
                   <span class="text-red-600 text-lg">❌</span>
                 {% endif %}
               </div>
-              <p class="text-xs text-gray-500 mt-1">{{ p.status }}</p> {# Display status here for finished games #}
             {% else %}
               <div class="text-sm text-gray-500 flex items-center justify-center gap-1">
-                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                <svg class="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
                 Not played yet
               </div>
             {% endif %}
@@ -127,14 +136,13 @@
 <!-- Flatpickr JS -->
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        // Initialize Flatpickr on the date input
+    document.addEventListener('DOMContentLoaded', function () {
         flatpickr("#date-picker", {
-            dateFormat: "Y-m-d", // Standard date format for backend
-            altInput: true, // Show user-friendly date in input
-            altFormat: "F j, Y", // User-friendly format (e.g., July 26, 2025)
-            // Auto-submit the form when a date is selected or cleared
-            onChange: function(selectedDates, dateStr, instance) {
+            dateFormat: "Y-m-d",
+            altInput: true,
+            altFormat: "F j, Y",
+            defaultDate: "{{ selected_date|date:'Y-m-d' }}",
+            onChange: function () {
                 document.getElementById('filter-form').submit();
             }
         });

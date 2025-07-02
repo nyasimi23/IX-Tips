@@ -480,22 +480,28 @@ def fetch_and_cache_team_metadata():
             print(f"[EXCEPTION] Error fetching teams for {comp_code}: {e}")
 
 from datetime import date
-from datetime import date
 
 def get_top_predictions(limit=10):
     today = date.today()
-    matches = MatchPrediction.objects.filter(match_date__gte=today)
+    matches = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date")
 
-    picks = []
+    picks_by_date = {}
+
+    tip_priority = {
+        "Over 2.5": 3,
+        "GG": 2,
+        "1": 1,
+        "2": 1,
+        "X": 0
+    }
 
     for m in matches:
         tips = []
-
         meta_home = get_team_metadata(m.home_team)
         meta_away = get_team_metadata(m.away_team)
 
-        # Tip: Match result
         margin = m.predicted_home_goals - m.predicted_away_goals
+
         if abs(margin) >= 1.5:
             if margin > 0:
                 tips.append(("1", min(abs(margin) * 10, 40)))  # Home win
@@ -504,74 +510,92 @@ def get_top_predictions(limit=10):
         elif abs(margin) <= 0.4:
             tips.append(("X", 20))  # Draw
 
-        # Tip: GG (Both teams score)
         if m.predicted_home_goals >= 1 and m.predicted_away_goals >= 1:
             tips.append(("GG", 25))
 
-        # Tip: Over 2.5
         total_goals = m.predicted_home_goals + m.predicted_away_goals
         if total_goals > 2.5:
             tips.append(("Over 2.5", min((total_goals - 2.5) * 12, 30)))
 
-        # Pick the tip with highest confidence
         if tips:
-            best_tip = max(tips, key=lambda x: x[1])
-            picks.append({
-                "home_team":meta_home.get("shortName", m.home_team),  
-                "away_team":meta_away.get("shortName", m.away_team),
+            # ✅ Force "Over 2.5" tip if total goals ≥ 4
+            if total_goals >= 3:
+                best_tip = ("Over 2.5", 100)
+            else:
+                best_tip = sorted(
+                    tips,
+                    key=lambda x: (x[1], tip_priority.get(x[0], 0)),
+                    reverse=True
+                )[0]
+
+            match_day = m.match_date.strftime("%Y-%m-%d")
+            picks_by_date.setdefault(match_day, []).append({
+                "home_team": meta_home.get("shortName", m.home_team),
+                "away_team": meta_away.get("shortName", m.away_team),
                 "tip": best_tip[0],
-                "confidence": f"{best_tip[1]:.0f}%",
-                "match_date": m.match_date.strftime("%Y-%m-%d"),
+                "confidence": f"{best_tip[1]:.0f}",
+                "match_date": match_day,
             })
 
-    # Sort tips by confidence in descending order
-    sorted_picks = sorted(picks, key=lambda x: int(x["confidence"].rstrip('%')), reverse=True)
-
-    return sorted_picks[:limit]
+    return picks_by_date
+    
 def generate_predictions_for_date(date):
     return MatchPrediction.objects.filter(match_date=date, status="TIMED")
 
 
 from .models import TopPick
-def store_top_pick_for_date(predictions, match_date):
-    TopPick.objects.filter(match_date=match_date).delete()
+def store_top_pick_for_date(predictions_by_date):
+    from datetime import datetime
 
-    for p in predictions:
-        home, away = p["teams"].split(" vs ")
-        match = MatchPrediction.objects.filter(
-            home_team=home,
-            away_team=away,
-            match_date=match_date
-        ).first()
+    all_picks = []
 
-        actual_tip = None
-        is_correct = False
+    for date_str, picks in predictions_by_date.items():
+        try:
+            match_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
 
-        if match and match.status == "FINISHED":
-            # Calculate actual match outcome
-            result_tip = None
-            if match.actual_home_goals > match.actual_away_goals:
-                result_tip = "1"
-            elif match.actual_home_goals < match.actual_away_goals:
-                result_tip = "2"
-            else:
-                result_tip = "X"
+        TopPick.objects.filter(match_date=match_date).delete()
 
-            # Add GG or Over 2.5 logic
-            if match.actual_home_goals >= 1 and match.actual_away_goals >= 1:
-                actual_tip = "GG"
-            elif (match.actual_home_goals + match.actual_away_goals) > 2.5:
-                actual_tip = "Over 2.5"
-            else:
-                actual_tip = result_tip
+        for p in picks:
+            match = MatchPrediction.objects.filter(
+                home_team=p["home_team"],
+                away_team=p["away_team"],
+                match_date=match_date
+            ).first()
 
-            is_correct = actual_tip == p["tip"]
+            actual_tip = None
+            is_correct = None
 
-        TopPick.objects.create(
-            match_date=match_date,
-            teams=p["teams"],
-            tip=p["tip"],
-            confidence=p["confidence"],
-            actual_tip=actual_tip,
-            is_correct=is_correct
-        )
+            if match and match.status == "FINISHED":
+                if match.actual_home_goals > match.actual_away_goals:
+                    result_tip = "1"
+                elif match.actual_home_goals < match.actual_away_goals:
+                    result_tip = "2"
+                else:
+                    result_tip = "X"
+
+                if match.actual_home_goals >= 1 and match.actual_away_goals >= 1:
+                    actual_tip = "GG"
+                elif (match.actual_home_goals + match.actual_away_goals) > 2.5:
+                    actual_tip = "Over 2.5"
+                else:
+                    actual_tip = result_tip
+
+                is_correct = actual_tip == p["tip"]
+
+            all_picks.append(TopPick(
+                match_date=match_date,
+                home_team=p["home_team"],
+                away_team=p["away_team"],
+                tip=p["tip"],
+                confidence=p["confidence"],
+                actual_tip=actual_tip,
+                is_correct=is_correct
+            ))
+
+    if all_picks:
+        TopPick.objects.bulk_create(all_picks)
+        print(f"[TopPick] Stored {len(all_picks)} picks.")
+    else:
+        print("[TopPick] No picks to store.")

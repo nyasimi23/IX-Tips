@@ -1,3 +1,4 @@
+import csv
 import difflib
 import os
 import re
@@ -8,7 +9,7 @@ from datetime import datetime
 from collections import defaultdict
 from django.core.paginator import Paginator
 from django.shortcuts import redirect, render
-from django.http import JsonResponse
+from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.contrib import messages
 from django.core.cache import cache
 from django.templatetags.static import static
@@ -648,6 +649,11 @@ from django.template.loader import render_to_string
 from django.http import JsonResponse
 from datetime import date
 from django.views.decorators.http import require_GET
+
+from .models import TopPick, MatchPrediction
+from .utils import get_top_predictions
+from django.db import transaction
+from itertools import chain
 @require_GET
 def top_picks_view(request):
     label_filter = request.GET.get("filter")
@@ -666,20 +672,26 @@ def top_picks_view(request):
         upcoming_dates = TopPick.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
         match_date = upcoming_dates.first() if upcoming_dates.exists() else today
 
-    # Filter TopPick records
+    # Fetch from DB
     if show_past:
         picks_qs = TopPick.objects.filter(match_date__lt=today).order_by("-match_date")
     else:
         picks_qs = TopPick.objects.filter(match_date=match_date)
 
-    picks = list(picks_qs.values("home_team","away_team", "tip", "actual_tip", "is_correct", "confidence", "match_date"))
+    picks = list(picks_qs.values("home_team", "away_team", "tip", "actual_tip", "is_correct", "confidence", "match_date"))
 
-    source = "cached" if picks else "live"
+    source = "cached"
 
-    # Fallback to live predictions if empty and not viewing past
+    # If no picks stored, fallback to live predictions
     if not picks and not show_past:
-        picks = get_top_predictions(limit=10)
+        predictions_by_date = get_top_predictions(limit=10)
 
+        if match_date.strftime("%Y-%m-%d") in predictions_by_date:
+            store_top_pick_for_date(predictions_by_date)  # stores to DB
+            picks = predictions_by_date[match_date.strftime("%Y-%m-%d")]
+            source = "live"
+
+    # Apply tip filter (1, 2, GG, Over 2.5 etc.)
     if label_filter:
         picks = [p for p in picks if p.get("tip") == label_filter]
 
@@ -695,3 +707,45 @@ def refresh_top_picks(request):
     top_predictions = get_top_predictions(limit=10)
     store_top_pick_for_date(top_predictions, today)
     return redirect("top-picks_view")
+
+from reportlab.pdfgen import canvas
+
+def export_top_picks(request, format):
+    
+    match_date_str = request.GET.get("match_date")
+    
+    try:
+        # Handle both ISO and human-readable formats
+        try:
+            match_date = datetime.strptime(match_date_str, "%Y-%m-%d").date()
+        except ValueError:
+            match_date = datetime.strptime(match_date_str, "%B %d, %Y").date()  # e.g. "July 12, 2025"
+    except Exception as e:
+        return HttpResponseBadRequest(f"Invalid date format: {e}")
+    picks = TopPick.objects.filter(match_date=match_date)
+
+    if format == "csv":
+        response = HttpResponse(content_type="text/csv")
+        response["Content-Disposition"] = f'attachment; filename="top_picks_{match_date}.csv"'
+        writer = csv.writer(response)
+        writer.writerow(["Match Date", "Home", "Away", "Tip", "Confidence", "Actual Tip", "Correct?"])
+        for p in picks:
+            writer.writerow([p.match_date, p.home_team, p.away_team, p.tip, p.confidence, p.actual_tip, p.is_correct])
+        return response
+
+    elif format == "pdf":
+        response = HttpResponse(content_type="application/pdf")
+        response["Content-Disposition"] = f'attachment; filename="top_picks_{match_date}.pdf"'
+        p = canvas.Canvas(response)
+        y = 800
+        p.drawString(100, y, f"Top Picks - {match_date}")
+        y -= 30
+        for pick in picks:
+            p.drawString(100, y, f"{pick.home_team} vs {pick.away_team} - Tip: {pick.tip} - Confidence: {pick.confidence}%")
+            y -= 20
+        p.showPage()
+        p.save()
+        return response
+
+    else:
+        return HttpResponse("Invalid format", status=400)
