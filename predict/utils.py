@@ -545,8 +545,6 @@ def generate_predictions_for_date(date):
 
 from .models import TopPick
 def store_top_pick_for_date(predictions_by_date):
-    from datetime import datetime
-
     all_picks = []
 
     for date_str, picks in predictions_by_date.items():
@@ -555,6 +553,7 @@ def store_top_pick_for_date(predictions_by_date):
         except ValueError:
             continue
 
+        # Remove existing TopPicks for this date to avoid duplicates
         TopPick.objects.filter(match_date=match_date).delete()
 
         for p in picks:
@@ -568,6 +567,7 @@ def store_top_pick_for_date(predictions_by_date):
             is_correct = None
 
             if match and match.status == "FINISHED":
+                # Determine result tip from actual goals
                 if match.actual_home_goals > match.actual_away_goals:
                     result_tip = "1"
                 elif match.actual_home_goals < match.actual_away_goals:
@@ -575,13 +575,19 @@ def store_top_pick_for_date(predictions_by_date):
                 else:
                     result_tip = "X"
 
-                if match.actual_home_goals >= 1 and match.actual_away_goals >= 1:
+                # Determine GG or Over 2.5
+                gg = match.actual_home_goals >= 1 and match.actual_away_goals >= 1
+                over_2_5 = (match.actual_home_goals + match.actual_away_goals) > 2.5
+
+                # Map tip based on what user predicted
+                if p["tip"] == "GG" and gg:
                     actual_tip = "GG"
-                elif (match.actual_home_goals + match.actual_away_goals) > 2.5:
+                elif p["tip"] == "Over 2.5" and over_2_5:
                     actual_tip = "Over 2.5"
                 else:
                     actual_tip = result_tip
 
+                # Check if prediction is correct
                 is_correct = actual_tip == p["tip"]
 
             all_picks.append(TopPick(
@@ -591,7 +597,7 @@ def store_top_pick_for_date(predictions_by_date):
                 tip=p["tip"],
                 confidence=p["confidence"],
                 actual_tip=actual_tip,
-                is_correct=is_correct
+                is_correct=is_correct,
             ))
 
     if all_picks:
@@ -599,3 +605,62 @@ def store_top_pick_for_date(predictions_by_date):
         print(f"[TopPick] Stored {len(all_picks)} picks.")
     else:
         print("[TopPick] No picks to store.")
+def update_actuals_for_top_picks(picks_qs):
+    picks_to_update = picks_qs.filter(actual_tip__isnull=True)
+
+    for pick in picks_to_update:
+        print(f"\n🟡 Processing TopPick: {pick.match_date} | {pick.home_team} vs {pick.away_team}")
+
+        # Apply metadata to TopPick teams
+        pick_home_meta = get_team_metadata(pick.home_team)
+        pick_away_meta = get_team_metadata(pick.away_team)
+
+        pick_home = pick_home_meta.get("shortName", pick.home_team).lower()
+        pick_away = pick_away_meta.get("shortName", pick.away_team).lower()
+
+        # Loop over all MatchPredictions for that date
+        match_candidates = MatchPrediction.objects.filter(match_date=pick.match_date)
+
+        matched = None
+        for match in match_candidates:
+            match_home_meta = get_team_metadata(match.home_team)
+            match_away_meta = get_team_metadata(match.away_team)
+
+            match_home = match_home_meta.get("shortName", match.home_team).lower()
+            match_away = match_away_meta.get("shortName", match.away_team).lower()
+
+            if pick_home == match_home and pick_away == match_away:
+                matched = match
+                break
+
+        if not matched:
+            print(f"❌ No match found for TopPick on {pick.match_date}: {pick_home} vs {pick_away}")
+            continue
+
+        print(f"✅ Found: {matched.home_team} vs {matched.away_team} | Status: {matched.status}")
+
+        if matched.actual_home_goals is not None and matched.actual_away_goals is not None:
+            home_goals = matched.actual_home_goals
+            away_goals = matched.actual_away_goals
+
+            result_tip = (
+                "1" if home_goals > away_goals else
+                "2" if home_goals < away_goals else "X"
+            )
+
+            gg = home_goals >= 1 and away_goals >= 1
+            over_2_5 = (home_goals + away_goals) > 2.5
+
+            if pick.tip == "GG" and gg:
+                actual_tip = "GG"
+            elif pick.tip == "Over 2.5" and over_2_5:
+                actual_tip = "Over 2.5"
+            else:
+                actual_tip = result_tip
+
+            pick.actual_tip = actual_tip
+            pick.is_correct = (pick.tip == actual_tip)
+            pick.save()
+            print(f"💾 Updated TopPick: actual_tip = {actual_tip}, is_correct = {pick.is_correct}")
+        else:
+            print("⚠️ Match found but actual goals missing.")

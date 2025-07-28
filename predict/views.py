@@ -25,7 +25,7 @@ from django_celery_beat.models import PeriodicTask
 
 from .models import MatchPrediction, TopPick
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
-from .utils import fetch_matches_by_date, get_top_predictions, predict_match_outcome, preprocess_api_data, store_top_pick_for_date, train_models, get_league_table, fetch_training_data
+from .utils import fetch_matches_by_date, get_top_predictions, predict_match_outcome, preprocess_api_data, store_top_pick_for_date, train_models, get_league_table, fetch_training_data, update_actuals_for_top_picks
 from .generate_logo_mapping import TEAM_LOGOS
 from .utils import COMPETITIONS
 
@@ -198,16 +198,7 @@ BASE_URL = "https://api.football-data.org/v4"
  # 🔒 Ideally move this to settings or .env
 
 def fetch_actual_results(competition_code, match_date):
-    """
-    Fetches actual results of matches for a specific competition and date.
 
-    Parameters:
-    - competition_code: The competition code (e.g., 'PL' for Premier League).
-    - match_date: The date of the matches in 'YYYY-MM-DD' format.
-
-    Returns:
-    - A list of dictionaries containing match results, including teams, scores, and status.
-    """
     url = f"{BASE_URL}/competitions/{competition_code}/matches"
     headers = {"X-Auth-Token": API_KEY}
 
@@ -450,6 +441,7 @@ from datetime import datetime
 def predictions_view(request):
     match_date = request.GET.get('match_date')
     predictions = MatchPrediction.objects.all().order_by('match_date')
+    print(predictions.match_id)
     if match_date:
         predictions = predictions.filter(match_date=match_date)
     else:
@@ -632,19 +624,56 @@ def refresh_league_table_cache(request):
             return JsonResponse({"success": True, "message": f"Refreshed {comp}"})
     return JsonResponse({"success": False, "message": "Invalid request"})
 
+from django.shortcuts import render
+from .forms import ActualResultForm
+from .models import MatchPrediction
+  # assuming fetch_actual_results is in utils.py
+from django.contrib import messages
+
 def actual_results_view(request):
     form = ActualResultForm(request.GET or None)
     results = []
 
     if form.is_valid():
         comp = form.cleaned_data['competition']
-        match_date = form.cleaned_data['match_date'].strftime('%Y-%m-%d')
-        results = fetch_actual_results(comp, match_date)
+        match_date_str = form.cleaned_data['match_date'].strftime('%Y-%m-%d')
+
+        # Fetch actual match results from API
+        results = fetch_actual_results(comp, match_date_str)
+
+        updated_count = 0
+
+        for result in results:
+            home = result["home_team"]
+            away = result["away_team"]
+
+            # Try to find the match prediction to update
+            prediction = MatchPrediction.objects.filter(
+                competition=comp,
+                home_team=home,
+                away_team=away,
+                match_date=form.cleaned_data['match_date']
+            ).first()
+
+            if prediction:
+                prediction.actual_home_goals = result["actual_home_goals"]
+                prediction.actual_away_goals = result["actual_away_goals"]
+                prediction.actual_result = result["actual_result"]
+                prediction.actual_score = f"{result['actual_home_goals']} - {result['actual_away_goals']}"
+                prediction.status = "FINISHED"
+                prediction.save()
+                updated_count += 1
+
+        if updated_count:
+            messages.success(request, f"{updated_count} match result(s) updated successfully.")
+        else:
+            messages.warning(request, "No matching predictions found to update.")
 
     return render(request, "predict/actual_results.html", {
         "form": form,
         "results": results,
     })
+
 from django.template.loader import render_to_string
 from django.http import JsonResponse
 from datetime import date
@@ -654,6 +683,7 @@ from .models import TopPick, MatchPrediction
 from .utils import get_top_predictions
 from django.db import transaction
 from itertools import chain
+
 @require_GET
 def top_picks_view(request):
     label_filter = request.GET.get("filter")
@@ -668,7 +698,6 @@ def top_picks_view(request):
         except ValueError:
             match_date = today
     else:
-        # Default to today or the next upcoming TopPick date
         upcoming_dates = TopPick.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
         match_date = upcoming_dates.first() if upcoming_dates.exists() else today
 
@@ -678,6 +707,9 @@ def top_picks_view(request):
     else:
         picks_qs = TopPick.objects.filter(match_date=match_date)
 
+    # ✅ Add this line to update actual results if needed
+    update_actuals_for_top_picks(picks_qs)
+
     picks = list(picks_qs.values("home_team", "away_team", "tip", "actual_tip", "is_correct", "confidence", "match_date"))
 
     source = "cached"
@@ -685,13 +717,11 @@ def top_picks_view(request):
     # If no picks stored, fallback to live predictions
     if not picks and not show_past:
         predictions_by_date = get_top_predictions(limit=10)
-
         if match_date.strftime("%Y-%m-%d") in predictions_by_date:
-            store_top_pick_for_date(predictions_by_date)  # stores to DB
+            store_top_pick_for_date(predictions_by_date)
             picks = predictions_by_date[match_date.strftime("%Y-%m-%d")]
             source = "live"
 
-    # Apply tip filter (1, 2, GG, Over 2.5 etc.)
     if label_filter:
         picks = [p for p in picks if p.get("tip") == label_filter]
 
@@ -702,6 +732,7 @@ def top_picks_view(request):
         "selected_date": match_date,
         "show_past": show_past
     })
+
 def refresh_top_picks(request):
     today = date.today()
     top_predictions = get_top_predictions(limit=10)
