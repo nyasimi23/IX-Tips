@@ -43,12 +43,9 @@ app.conf.beat_schedule = {
         "task": "predict.tasks.update_metadata_task",
         "schedule": crontab(minute=0, hour='*'),  # every hour
     },
-    'update-match-status-daily': {
-        'task': 'predict.tasks.update_match_status_task',
-        'schedule': crontab(hour=2, minute=0),  # runs daily at 2:00 AM
-    },
-    'Actual-results': {
-        'task': 'update_actual_results_all_competitions',
-        'schedule': crontab(hour=6, minute=0, day_of_week='tue'),  # 4:00 AM
+    
+    "update-match-status-and-results-daily": {
+        "task": "predict.tasks.update_match_status_and_results",
+        "schedule": crontab(hour=3, minute=0),  # runs daily at 03:00 AM
     },
 }

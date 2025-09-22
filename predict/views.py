@@ -441,7 +441,8 @@ from datetime import datetime
 def predictions_view(request):
     match_date = request.GET.get('match_date')
     predictions = MatchPrediction.objects.all().order_by('match_date')
-    print(predictions.match_id)
+
+    
     if match_date:
         predictions = predictions.filter(match_date=match_date)
     else:
@@ -780,3 +781,15 @@ def export_top_picks(request, format):
 
     else:
         return HttpResponse("Invalid format", status=400)
+
+
+def backfill_viewids():
+    matches = MatchPrediction.objects.all()
+    for match in matches:
+        if not match.match_id:
+            # fallback viewid based on teams and date
+            composite_id = f"{match.home_team}-{match.away_team}-{match.match_date}"
+            match.matchid = composite_id
+            match.save()
+    print("Backfilling complete.")
+

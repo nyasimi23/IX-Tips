@@ -293,3 +293,71 @@ def update_actual_results_all_competitions(match_date=None):
     from .tasks import COMPETITIONS
     for comp in COMPETITIONS:
         update_actual_results_for_competition.delay(comp, match_date)
+
+
+@shared_task
+def update_match_status_and_results():
+    """
+    Unified task:
+    - Update match statuses (TIMED / FINISHED)
+    - Fetch actual results only for finished matches missing scores
+    """
+    today = date.today()
+
+    # 1. Mark future matches as TIMED
+    timed = MatchPrediction.objects.filter(match_date__gte=today).update(status="TIMED")
+
+    # 2. Mark past matches as FINISHED
+    finished_matches = MatchPrediction.objects.filter(match_date__lt=today)
+    finished_count = finished_matches.update(status="FINISHED")
+
+    # 3. Find unfinished matches (missing actual goals)
+    pending_results = (
+        finished_matches
+        .filter(actual_home_goals__isnull=True, actual_away_goals__isnull=True)
+        .values("match_date", "competition")
+        .distinct()
+    )
+
+    updated = 0
+    for entry in pending_results:
+        match_date = entry["match_date"].strftime("%Y-%m-%d")
+        comp = entry["competition"]
+
+        # Fetch results for this competition + date
+        results = fetch_actual_results(comp, match_date)
+        for res in results:
+            try:
+                prediction = MatchPrediction.objects.get(
+                    home_team=res["home_team"],
+                    away_team=res["away_team"],
+                    match_date=match_date,
+                    competition=comp,
+                )
+                prediction.actual_home_goals = res["actual_home_goals"]
+                prediction.actual_away_goals = res["actual_away_goals"]
+
+                # Check prediction accuracy
+                if (
+                    prediction.predicted_home_goals is not None
+                    and prediction.predicted_away_goals is not None
+                ):
+                    predicted_result = (
+                        "Home" if prediction.predicted_home_goals > prediction.predicted_away_goals
+                        else "Away" if prediction.predicted_home_goals < prediction.predicted_away_goals
+                        else "Draw"
+                    )
+                    prediction.is_accurate = (predicted_result == res["actual_result"])
+
+                prediction.status = "FINISHED"
+                prediction.save()
+                updated += 1
+            except MatchPrediction.DoesNotExist:
+                print(f"[WARN] Prediction not found for: {res['home_team']} vs {res['away_team']}")
+
+    return {
+        "updated_timed": timed,
+        "updated_finished": finished_count,
+        "results_updated": updated,
+        "dates_checked": list(set([str(e["match_date"]) for e in pending_results])),
+    }
