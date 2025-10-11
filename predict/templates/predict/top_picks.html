@@ -99,6 +99,16 @@
               <p class="text-lg font-bold text-blue-700">Prediction: <span class="text-gray-900">{{ p.tip }}</span></p>
           </div>
 
+          <!-- Odds Section -->
+          {% if p.odds %}
+          <div class="text-center mb-4">
+              <p class="text-sm font-medium text-gray-600">Odds:</p>
+              <span class="inline-flex items-center px-3 py-1 rounded-full bg-yellow-100 text-yellow-800 font-semibold text-sm shadow-sm">
+                  {{ p.odds }}
+              </span>
+          </div>
+          {% endif %}
+
           <div class="pt-4 border-t border-gray-200 text-center">
             {% if p.actual_tip %}
               <div class="flex justify-center items-center gap-2">

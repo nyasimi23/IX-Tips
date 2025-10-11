@@ -8,6 +8,7 @@ from sklearn.ensemble import RandomForestClassifier
 from celery import shared_task
 from django.core.cache import cache
 from datetime import date
+import time
 
 from predict.views import fetch_actual_results
 from .models import MatchPrediction
@@ -18,7 +19,7 @@ from .utils import (
     fetch_matches_by_date,
     fetch_training_data_all_seasons,
     find_next_match_date,
-    generate_predictions_for_date,
+    #generate_predictions_for_date,
     get_league_table,
     get_top_predictions,
     save_predictions,
@@ -289,18 +290,12 @@ def update_actual_results_for_competition(competition_code, match_date=None):
     return updated
 
 @shared_task
-def update_actual_results_all_competitions(match_date=None):
-    from .tasks import COMPETITIONS
-    for comp in COMPETITIONS:
-        update_actual_results_for_competition.delay(comp, match_date)
-
-
-@shared_task
 def update_match_status_and_results():
     """
     Unified task:
     - Update match statuses (TIMED / FINISHED)
     - Fetch actual results only for finished matches missing scores
+    - Add 10s delay between API requests to avoid hitting rate limits
     """
     today = date.today()
 
@@ -324,36 +319,45 @@ def update_match_status_and_results():
         match_date = entry["match_date"].strftime("%Y-%m-%d")
         comp = entry["competition"]
 
+        # --- add delay between API calls ---
+        time.sleep(10)
+
         # Fetch results for this competition + date
         results = fetch_actual_results(comp, match_date)
         for res in results:
-            try:
-                prediction = MatchPrediction.objects.get(
+            prediction = (
+                MatchPrediction.objects.filter(
                     home_team=res["home_team"],
                     away_team=res["away_team"],
                     match_date=match_date,
                     competition=comp,
                 )
-                prediction.actual_home_goals = res["actual_home_goals"]
-                prediction.actual_away_goals = res["actual_away_goals"]
+                .order_by("id")
+                .first()
+            )
 
-                # Check prediction accuracy
-                if (
-                    prediction.predicted_home_goals is not None
-                    and prediction.predicted_away_goals is not None
-                ):
-                    predicted_result = (
-                        "Home" if prediction.predicted_home_goals > prediction.predicted_away_goals
-                        else "Away" if prediction.predicted_home_goals < prediction.predicted_away_goals
-                        else "Draw"
-                    )
-                    prediction.is_accurate = (predicted_result == res["actual_result"])
-
-                prediction.status = "FINISHED"
-                prediction.save()
-                updated += 1
-            except MatchPrediction.DoesNotExist:
+            if not prediction:
                 print(f"[WARN] Prediction not found for: {res['home_team']} vs {res['away_team']}")
+                continue
+
+            prediction.actual_home_goals = res["actual_home_goals"]
+            prediction.actual_away_goals = res["actual_away_goals"]
+
+            # Check prediction accuracy
+            if (
+                prediction.predicted_home_goals is not None
+                and prediction.predicted_away_goals is not None
+            ):
+                predicted_result = (
+                    "Home" if prediction.predicted_home_goals > prediction.predicted_away_goals
+                    else "Away" if prediction.predicted_home_goals < prediction.predicted_away_goals
+                    else "Draw"
+                )
+                prediction.is_accurate = (predicted_result == res["actual_result"])
+
+            prediction.status = "FINISHED"
+            prediction.save()
+            updated += 1
 
     return {
         "updated_timed": timed,

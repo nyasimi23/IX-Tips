@@ -25,6 +25,10 @@ urlpatterns = [
     path("ajax/league-table/", views.ajax_league_table, name="ajax_league_table"),
     path("top-picks/", views.top_picks_view, name="top_picks"),
     path("top-picks/export/<str:format>/", views.export_top_picks, name="export_top_picks"),
+    path("api/predictions/", views.api_predictions, name="api_predictions"),
+    path("api/top-picks/", views.api_top_picks, name="api_top_picks"),
+    path("api/league-table/<str:competition_code>/", views.league_table_api, name="api_league_table"),
+    #path("view_odds", views.view_odds, name="view_odds"),
 
 
 

@@ -283,15 +283,16 @@
 
       <div class="predictions-grid">
         <!-- Headers as per image -->
-        <div class="grid-header">
-          <div class="grid-col">Date</div>
-          <div class="grid-col">Competition</div>
-          <div class="grid-col">Match</div>
-          <div class="grid-col">Score</div>
-          <div class="grid-col">Pick</div>
-          <div class="grid-col">Ft</div>
-          
-        </div>
+      <div class="grid-header">
+  <div class="grid-col">Date</div>
+  <div class="grid-col">Competition</div>
+  <div class="grid-col">Match</div>
+  <div class="grid-col">Score</div>
+  <div class="grid-col">Pick</div>
+     
+  <div class="grid-col">Ft</div>
+</div>
+
 
         {% if predictions|length == 0 %}
           <div class="grid-row">
@@ -357,6 +358,25 @@
                 <div class="winner-circle bg-primary text-white">{{ match.winner }}</div>
 
               {% endif %}
+
+              <div class="grid-col">
+   
+
+  </div>
+  <div class="grid-col Odds">
+    {% if match.odds %}
+       {% if match.winner == "1" %}
+         <div class="text text-green-600">  {{ match.odds.home_win }}</div>
+       {% elif match.winner == "2" %}
+            {{ match.odds.away_win }}
+       {% else %}
+            {{ match.odds.draw }}
+       {% endif %}
+  
+{% else %}
+  N/A
+{% endif %}
+  </div>
               
             </div>
               <div class="grid-col actual-score-numeric">
