@@ -12,14 +12,33 @@
     body { background-color: #f8f9fa; font-family: 'Inter', sans-serif; } /* Added Inter font */
     .sidebar-left, .sidebar-right {
       background-color: #fff;
-      padding: 15px;
+      padding: 12px;
       border-radius: 8px;
       box-shadow: 0 0 10px rgba(0,0,0,0.05);
       margin-bottom: 20px;
     }
+    .sidebar-left strong {
+      font-size: 0.95rem;
+    }
+    .sidebar-left img {
+      max-width: 100%;
+      height: auto !important;
+    }
+    .sidebar-right h5 {
+      font-size: 0.95rem;
+      margin-bottom: 0;
+    }
+    .sidebar-right .form-select-sm {
+      font-size: 0.85rem;
+      padding-top: 0.2rem;
+      padding-bottom: 0.2rem;
+    }
+    .sidebar-right .table {
+      font-size: 0.9rem;
+    }
     .team-logo {
-      width: 32px;
-      height: 32px;
+      width: 22px;
+      height: 22px;
       object-fit: contain;
     }
 
@@ -47,11 +66,11 @@
       padding: 12px 0;
       color: #333;
       text-align: center;
-      font-size: 0.9em;
+      font-size: 0.78rem;
     }
         .winner-circle {
-      width: 36px;
-      height: 36px;
+      width: 28px;
+      height: 28px;
       display: flex;
       align-items: center;
       justify-content: center;
@@ -72,7 +91,7 @@
     }
 
     .grid-col {
-      padding: 8px 10px;
+      padding: 6px 8px;
       display: flex;
       flex-direction: column; /* Allows vertical stacking within column */
       justify-content: center;
@@ -80,7 +99,7 @@
       white-space: nowrap; /* Prevent wrapping for primary text elements */
       overflow: hidden; /* Hide overflow content if text is too long */
       text-overflow: ellipsis; /* Add ellipsis for overflowing text */
-      font-size: 0.9em; /* Smaller default font for content */
+      font-size: 0.78rem; /* Smaller default font for content */
       color: #343a40; /* Darker text */
     }
 
@@ -104,7 +123,7 @@
       white-space: nowrap; /* Keep team names on one line */
       overflow: hidden;
       text-overflow: ellipsis;
-      max-width: 80px; /* Limit team name width to prevent excessive growth */
+      max-width: 68px; /* Limit team name width to prevent excessive growth */
     }
     .match-info .vs-separator {
         font-weight: bold;
@@ -114,18 +133,18 @@
     }
 
     .comp-logo {
-      height: 20px; /* Adjust size based on image */
+      height: 14px; /* Adjust size based on image */
       object-fit: contain;
-      margin-bottom: 5px; /* Space between logo and name */
+      margin-bottom: 3px; /* Space between logo and name */
     }
     .comp-name {
-      font-size: 0.85em;
+      font-size: 0.72rem;
       font-weight: 500;
       color: #555;
     }
 
     .date-time .date { font-weight: bold; }
-    .date-time .time { font-size: 0.8em; color: #666; }
+    .date-time .time { font-size: 0.68rem; color: #666; }
 
     .predicted-winner-chip {
       background-color: #d4edda; /* Light green background */
@@ -144,7 +163,7 @@
       overflow: hidden;
     }
     .predicted-score-value { /* New style for the numerical score */
-      font-size: 1.1em;
+      font-size: 0.92rem;
       font-weight: bold;
       color: #333;
     }
@@ -160,8 +179,8 @@
         padding: 0 10px; /* Padding for the bar to show fully */
     }
     .confidence-bar-container {
-      width: 100px; /* Fixed width for the bar container as in image */
-      height: 20px; /* Slightly taller bar */
+      width: 76px; /* Fixed width for the bar container as in image */
+      height: 16px; /* Slightly taller bar */
       background-color: #e9ecef; /* Light gray background */
       border-radius: 10px; /* Rounded ends for the bar */
       overflow: hidden;
@@ -180,7 +199,7 @@
     }
     .confidence-text {
       color: white; /* White text for contrast */
-      font-size: 0.75em;
+      font-size: 0.62rem;
       font-weight: bold;
       position: relative; /* Keep text above the bar */
       z-index: 1; /* Ensure text is on top */
@@ -188,7 +207,7 @@
     }
 
     .status .badge {
-      font-size: 0.8em;
+      font-size: 0.72rem;
       padding: 4px 8px;
       border-radius: 12px;
       min-width: 60px; /* Ensure badges have minimum width */
@@ -260,7 +279,7 @@
 <div class="container-fluid py-3">
   <div class="row">
     <!-- Left Sidebar -->
-    <div class="col-lg-2 col-md-3">
+    <div class="col-lg-1 col-md-2">
       <div class="sidebar-left text-center">
         <strong>Support Us</strong><br>
         <a href="https://www.buymeacoffee.com/santos1252" target="_blank">
@@ -273,7 +292,7 @@
 
     </div>
     <!-- Center Content -->
-    <div class="col-lg-7 col-md-6 content-main">
+    <div class="col-lg-8 col-md-7 content-main">
       <h4 class="text-center mb-3">Match Predictions</h4>
       <!-- Filter Controls -->
       <form id="filter-form" method="get" class="d-flex flex-wrap justify-content-center gap-2 mb-3">
@@ -364,18 +383,11 @@
 
   </div>
   <div class="grid-col Odds">
-    {% if match.odds %}
-       {% if match.winner == "1" %}
-         <div class="text text-green-600">  {{ match.odds.home_win }}</div>
-       {% elif match.winner == "2" %}
-            {{ match.odds.away_win }}
-       {% else %}
-            {{ match.odds.draw }}
-       {% endif %}
-  
-{% else %}
+    {% if match.display_odds %}
+      <div class="text text-green-600">{{ match.display_odds|floatformat:2 }}</div>
+    {% else %}
   N/A
-{% endif %}
+    {% endif %}
   </div>
               
             </div>
@@ -450,6 +462,10 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
   }
+
+  window.setTimeout(function() {
+    window.location.reload();
+  }, 300000);
 });
 </script>
 </body>

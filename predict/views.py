@@ -17,24 +17,21 @@ from django.http import HttpResponse, HttpResponseBadRequest, JsonResponse
 from django.contrib import messages
 from django.core.cache import cache
 from django.templatetags.static import static
-from django.views.decorators.csrf import csrf_exempt
 from django.contrib.auth.decorators import login_required
 from django.template.loader import render_to_string
-from django.views.decorators.http import require_GET
-
-from sklearn.preprocessing import LabelEncoder
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error
+from django.views.decorators.http import require_GET, require_POST
+from django.utils import timezone
 
 from celery import current_app
 from django_celery_beat.models import PeriodicTask
 
 from .models import MatchOdds, MatchPrediction, TopPick
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
+from .constants import API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY
 from .utils import (
     fetch_matches_by_date,
     get_top_predictions as utils_get_top_predictions,
+    get_or_train_model_bundle,
     predict_match_outcome,
     preprocess_api_data,
     #store_top_pick_for_date,
@@ -49,35 +46,18 @@ from .utils import (
     process_match_data,
     update_actuals_for_top_picks,
     
-    COMPETITIONS
 )
 from .generate_logo_mapping import TEAM_LOGOS
 
 # -------------------------
 # CONFIG
 # -------------------------
-API_KEY = getattr(settings, "FOOTBALL_DATA_API_KEY", os.getenv("FOOTBALL_DATA_API_KEY", "7419be10abd14d7fb752e6fe6491e38f"))
+API_KEY = getattr(settings, "FOOTBALL_DATA_API_KEY", API_TOKEN)
 BASE_URL = "https://api.football-data.org/v4"
 
 # ODDS provider (the-odds-api)
-ODDS_API_KEY = getattr(settings, "ODDS_API_KEY", os.getenv("ODDS_API_KEY", "361d4c96a69e73be8db0953eca372dc1"))
+ODDS_API_KEY = getattr(settings, "ODDS_API_KEY", SETTINGS_ODDS_API_KEY)
 ODDS_API_BASE = "https://api.the-odds-api.com/v4/sports/{sport}/odds"
-
-COMPETITIONS = {
-    "PL": "Premier League",
-    "PD": "La Liga",
-    "SA": "Serie A",
-    "BL1": "Bundesliga",
-    "FL1": "Ligue 1",
-    "DED": "Eredivisie",
-    "PPL": "Primeira Liga",
-    "ELC": "Championship",
-    "CL": "UEFA Champions League",
-    "EC": "European Championship",
-    "BSA": "Campeonato Brasileiro Série A",
-    "CLI": "Copa Libertadores",
-    "WC": "FIFA World Cup",
-}
 competitions = COMPETITIONS
 # Map competition codes to The Odds API sport keys (extend as needed)
 COMPETITION_SPORT_MAP = {
@@ -99,7 +79,6 @@ COMPETITION_SPORT_MAP = {
 # Cache timeout for odds (seconds)
 ODDS_CACHE_TIMEOUT = 60 * 10  # 10 minutes
 PREFERRED_BOOKMAKERS = ["1xBet", "Tipico"]
-ODDS_API_KEY = "361d4c96a69e73be8db0953eca372dc1"
 
 # -------------------------
 # Utilities for team normalization / fuzzy matching
@@ -109,7 +88,7 @@ def fetch_odds(sport_key):
     url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/"
     params = {
         "regions": "eu",
-        "markets": "h2h,totals,btts",
+        "markets": "h2h,totals",
         "oddsFormat": "decimal",
         "apiKey": ODDS_API_KEY,
     }
@@ -157,9 +136,203 @@ def extract_odds_from_bookmaker(bookmaker, game):
     return odds_out
 
 
+def merge_odds_from_bookmakers(game):
+    merged_odds = {
+        "home": None,
+        "draw": None,
+        "away": None,
+        "over25": None,
+        "under25": None,
+        "btts_yes": None,
+        "btts_no": None,
+        "bookmaker": None,
+        "market_sources": {},
+    }
+    if not game.get("bookmakers"):
+        return merged_odds
+
+    ordered_bookmakers = sorted(
+        game.get("bookmakers", []),
+        key=lambda bookmaker: (
+            0 if bookmaker.get("title") in PREFERRED_BOOKMAKERS else 1,
+            PREFERRED_BOOKMAKERS.index(bookmaker.get("title")) if bookmaker.get("title") in PREFERRED_BOOKMAKERS else 999,
+            bookmaker.get("title", ""),
+        ),
+    )
+
+    for bookmaker in ordered_bookmakers:
+        odds = extract_odds_from_bookmaker(bookmaker, game)
+        for market_key in ("home", "draw", "away", "over25", "under25", "btts_yes", "btts_no"):
+            if merged_odds[market_key] is None and odds.get(market_key) is not None:
+                merged_odds[market_key] = odds.get(market_key)
+                merged_odds["market_sources"][market_key] = bookmaker.get("title")
+        if merged_odds["bookmaker"] is None and any(value is not None for value in odds.values()):
+            merged_odds["bookmaker"] = bookmaker.get("title")
+
+    return merged_odds
+
+
 def normalize_team_name(team, names):
     match = difflib.get_close_matches(team, names, n=1, cutoff=0.7)
     return match[0] if match else team
+
+
+def fixture_refresh_cache_key(competition_code, match_date):
+    return f"fixture_refresh::{competition_code}::{match_date}"
+
+
+def competition_odds_refresh_cache_key(competition_code):
+    return f"competition_odds_refresh::{competition_code}"
+
+
+def fixture_meta_cache_key(competition_code, match_date, home_team, away_team):
+    return f"fixture_meta::{competition_code}::{match_date}::{home_team}::{away_team}"
+
+
+def format_kickoff_time(utc_date):
+    if not utc_date:
+        return ""
+    try:
+        parsed = datetime.fromisoformat(utc_date.replace("Z", "+00:00"))
+        return timezone.localtime(parsed).strftime("%H:%M")
+    except ValueError:
+        return ""
+
+
+def normalize_team_lookup_key(name):
+    candidate = (name or "").strip().lower()
+    candidate = re.sub(r"[^\w\s]", " ", candidate)
+    candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
+    return re.sub(r"\s+", " ", candidate).strip()
+
+
+def fetch_matches_for_status_refresh(competition_code, match_date):
+    url = f"{BASE_URL}/competitions/{competition_code}/matches"
+    headers = {"X-Auth-Token": API_KEY}
+    params = {"dateFrom": match_date, "dateTo": match_date}
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=15)
+        response.raise_for_status()
+        return response.json().get("matches", [])
+    except requests.exceptions.RequestException as exc:
+        print(f"[ERROR] Status refresh failed for {competition_code} {match_date}: {exc}")
+        return []
+
+
+def normalize_api_match_status(api_status):
+    if api_status in {"FINISHED", "AWARDED"}:
+        return "FINISHED"
+    if api_status in {"IN_PLAY", "PAUSED", "LIVE"}:
+        return "LIVE"
+    if api_status in {"POSTPONED", "SUSPENDED", "CANCELLED"}:
+        return api_status
+    return "TIMED"
+
+
+def refresh_prediction_statuses(competition_code, match_date, force=False):
+    match_date_str = match_date.isoformat() if isinstance(match_date, date) else str(match_date)
+    if not competition_code or not match_date_str:
+        return 0
+
+    refresh_key = fixture_refresh_cache_key(competition_code, match_date_str)
+    if not force and cache.get(refresh_key):
+        return 0
+
+    matches = fetch_matches_for_status_refresh(competition_code, match_date_str)
+    if not matches:
+        cache.set(refresh_key, True, timeout=300)
+        return 0
+
+    predictions = {
+        (normalize_team_lookup_key(p.home_team), normalize_team_lookup_key(p.away_team)): p
+        for p in MatchPrediction.objects.filter(
+            competition=competition_code,
+            match_date=match_date_str,
+        )
+    }
+
+    updated = 0
+    for match in matches:
+        home_team = match.get("homeTeam", {}).get("name")
+        away_team = match.get("awayTeam", {}).get("name")
+        if not home_team or not away_team:
+            continue
+
+        cache.set(
+            fixture_meta_cache_key(competition_code, match_date_str, home_team, away_team),
+            {"kickoff_time": format_kickoff_time(match.get("utcDate"))},
+            timeout=60 * 60 * 12,
+        )
+
+        prediction = predictions.get(
+            (normalize_team_lookup_key(home_team), normalize_team_lookup_key(away_team))
+        )
+        if not prediction:
+            continue
+
+        normalized_status = normalize_api_match_status(match.get("status"))
+        changed = prediction.status != normalized_status
+        prediction.status = normalized_status
+
+        if normalized_status == "FINISHED":
+            full_time_score = match.get("score", {}).get("fullTime", {})
+            actual_home_goals = full_time_score.get("home")
+            actual_away_goals = full_time_score.get("away")
+            if actual_home_goals is not None and actual_away_goals is not None:
+                if prediction.actual_home_goals != actual_home_goals or prediction.actual_away_goals != actual_away_goals:
+                    changed = True
+                prediction.actual_home_goals = actual_home_goals
+                prediction.actual_away_goals = actual_away_goals
+                predicted_result = (
+                    "Home" if (prediction.predicted_home_goals or 0) > (prediction.predicted_away_goals or 0)
+                    else "Away" if (prediction.predicted_home_goals or 0) < (prediction.predicted_away_goals or 0)
+                    else "Draw"
+                )
+                actual_result = (
+                    "Home" if actual_home_goals > actual_away_goals
+                    else "Away" if actual_home_goals < actual_away_goals
+                    else "Draw"
+                )
+                prediction.is_accurate = (predicted_result == actual_result)
+
+        if changed:
+            prediction.save()
+            updated += 1
+
+    cache.set(refresh_key, True, timeout=300)
+    return updated
+
+
+def get_cached_kickoff_time(competition_code, match_date, home_team, away_team):
+    match_date_str = match_date.isoformat() if isinstance(match_date, date) else str(match_date)
+    cached = cache.get(fixture_meta_cache_key(competition_code, match_date_str, home_team, away_team), {})
+    return cached.get("kickoff_time", "")
+
+
+def upsert_match_odds(prediction, odds, bookmaker=None):
+    if not prediction or not odds:
+        return None
+
+    return MatchOdds.objects.update_or_create(
+        match=prediction,
+        defaults={
+            "home_win": odds.get("home"),
+            "draw": odds.get("draw"),
+            "away_win": odds.get("away"),
+            "over_2_5": odds.get("over25"),
+            "under_2_5": odds.get("under25"),
+            "btts_yes": odds.get("btts_yes"),
+            "btts_no": odds.get("btts_no"),
+            "bookmaker": bookmaker or odds.get("bookmaker"),
+        },
+    )
+
+
+def resolve_prediction_odds(prediction):
+    try:
+        return prediction.odds
+    except MatchOdds.DoesNotExist:
+        return None
 
 
 def update_odds_in_db(competition_code):
@@ -170,36 +343,43 @@ def update_odds_in_db(competition_code):
 
     odds_data = fetch_odds(sport_key)
     saved_count = 0
+    candidate_predictions = list(
+        MatchPrediction.objects.filter(
+            competition=competition_code,
+            match_date__gte=date.today() - timedelta(days=1),
+        ).order_by("match_date", "id")
+    )
+    prediction_map = {
+        (normalize_team_lookup_key(p.home_team), normalize_team_lookup_key(p.away_team)): p
+        for p in candidate_predictions
+    }
 
     for game in odds_data:
         home, away = game["home_team"], game["away_team"]
-
-        bookmaker = None
-        for pref in PREFERRED_BOOKMAKERS:
-            bookmaker = next((b for b in game.get("bookmakers", []) if b["title"] == pref), None)
-            if bookmaker:
-                break
-        if not bookmaker and game.get("bookmakers"):
-            bookmaker = game["bookmakers"][0]
-
-        if bookmaker:
-            odds = extract_odds_from_bookmaker(bookmaker, game)
-            MatchOdds.objects.update_or_create(
-                competition_code=competition_code,
-                home_team=home,
-                away_team=away,
-                defaults={
-                    "home_win": odds["home"],
-                    "draw": odds["draw"],
-                    "away_win": odds["away"],
-                    "over25": odds["over25"],
-                    "under25": odds["under25"],
-                    "btts_yes": odds["btts_yes"],
-                    "bookmaker": bookmaker["title"],
-                },
-            )
+        odds = merge_odds_from_bookmakers(game)
+        prediction = prediction_map.get(
+            (normalize_team_lookup_key(home), normalize_team_lookup_key(away))
+        )
+        if not prediction:
+            continue
+        if any(
+            odds.get(market_key) is not None
+            for market_key in ("home", "draw", "away", "over25", "under25", "btts_yes", "btts_no")
+        ):
+            upsert_match_odds(prediction, odds, bookmaker=odds.get("bookmaker"))
             saved_count += 1
     return saved_count
+
+
+def refresh_competition_odds(competition_code, force=False):
+    if not competition_code:
+        return 0
+    refresh_key = competition_odds_refresh_cache_key(competition_code)
+    if not force and cache.get(refresh_key):
+        return 0
+    updated = update_odds_in_db(competition_code)
+    cache.set(refresh_key, True, timeout=300)
+    return updated
 
 
 def update_all_odds():
@@ -244,16 +424,7 @@ def fetch_odds_for_match(match, competition_code="EPL"):
     for game in odds_data:
         if (game["home_team"] == home_norm and game["away_team"] == away_norm) or \
            (game["home_team"] == away_norm and game["away_team"] == home_norm):
-
-            # ✅ Try preferred bookmakers first
-            for pref in PREFERRED_BOOKMAKERS:
-                for bookmaker in game.get("bookmakers", []):
-                    if bookmaker["title"] == pref:
-                        return extract_odds_from_bookmaker(bookmaker, game)
-
-            # ✅ fallback: use the first available bookmaker
-            if game.get("bookmakers"):
-                return extract_odds_from_bookmaker(game["bookmakers"][0], game)
+            return merge_odds_from_bookmakers(game)
 
     return None
 
@@ -334,46 +505,31 @@ def get_top_predictions(limit=10):
 # Helper: fetch actual results (existing)
 # -------------------------
 def fetch_actual_results(competition_code, match_date):
-    url = f"{BASE_URL}/competitions/{competition_code}/matches"
-    headers = {"X-Auth-Token": API_KEY}
-
-    try:
-        response = requests.get(url, headers=headers)
-        response.raise_for_status()
-        matches = response.json().get("matches", [])
-        actual_results = []
-        for match in matches:
-            if match.get("utcDate", "").startswith(match_date) and match["status"] == "FINISHED":
-                home_team = match["homeTeam"]["name"]
-                away_team = match["awayTeam"]["name"]
-                full_time_score = match["score"]["fullTime"]
-                actual_home_goals = full_time_score["home"]
-                actual_away_goals = full_time_score["away"]
-                actual_result = (
-                    "Home" if actual_home_goals > actual_away_goals
-                    else "Away" if actual_home_goals < actual_away_goals
-                    else "Draw"
-                )
-                actual_results.append({
-                    "home_team": home_team,
-                    "away_team": away_team,
-                    "actual_home_goals": actual_home_goals,
-                    "actual_away_goals": actual_away_goals,
-                    "actual_result": actual_result,
-                })
-        return actual_results
-    except requests.exceptions.RequestException as e:
-        print(f"[ERROR] Fetch failed: {e}")
-        return []
-
-
-# -------------------------
-# TRAINING helper (existing)
-# -------------------------
-def train_model(X, y):
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
-    model.fit(X, y)
-    return model
+    matches = fetch_matches_for_status_refresh(competition_code, match_date)
+    actual_results = []
+    for match in matches:
+        if match.get("status") != "FINISHED":
+            continue
+        home_team = match["homeTeam"]["name"]
+        away_team = match["awayTeam"]["name"]
+        full_time_score = match.get("score", {}).get("fullTime", {})
+        actual_home_goals = full_time_score.get("home")
+        actual_away_goals = full_time_score.get("away")
+        if actual_home_goals is None or actual_away_goals is None:
+            continue
+        actual_result = (
+            "Home" if actual_home_goals > actual_away_goals
+            else "Away" if actual_home_goals < actual_away_goals
+            else "Draw"
+        )
+        actual_results.append({
+            "home_team": home_team,
+            "away_team": away_team,
+            "actual_home_goals": actual_home_goals,
+            "actual_away_goals": actual_away_goals,
+            "actual_result": actual_result,
+        })
+    return actual_results
 
 
 # -------------------------
@@ -391,34 +547,11 @@ def live_predictions_by_date(request):
         if not matches:
             message = "No matches found for selected date."
         else:
-            try:
-                train_df = fetch_training_data_all_seasons(competition_code)
-            except Exception as e:
-                return render(request, "predict/live_predictions.html", {
-                    "form": form,
-                    "message": f"[ERROR] Failed to fetch training data: {e}"
-                })
-
-            if train_df.empty:
+            model_bundle = get_or_train_model_bundle(competition_code)
+            if model_bundle is None:
                 message = "No training data found for this competition."
             else:
-                features = ['home_team', 'away_team']
-                label_home = 'home_goals'
-                label_away = 'away_goals'
-
-                team_names = pd.concat([train_df['home_team'], train_df['away_team']]).unique()
-                le = LabelEncoder()
-                le.fit(team_names)
-
-                for col in ['home_team', 'away_team']:
-                    train_df[col] = le.transform(train_df[col])
-
-                X = train_df[features]
-                y_home = train_df[label_home]
-                y_away = train_df[label_away]
-
-                model_home = train_model(X, y_home)
-                model_away = train_model(X, y_away)
+                model_home, model_away, model_context = model_bundle
 
                 actual_results = fetch_actual_results(competition_code, match_date)
                 actual_result_map = {
@@ -430,20 +563,12 @@ def live_predictions_by_date(request):
                     away = match['awayTeam']['name']
                     match_id = match.get('id')
 
-                    if home not in le.classes_ or away not in le.classes_:
-                        print(f"[WARN] Skipping unknown teams: {home} or {away}")
-                        continue
-
                     try:
-                        input_df = pd.DataFrame({
-                            'home_team': [home],
-                            'away_team': [away]
-                        })
-                        input_df['home_team'] = le.transform(input_df['home_team'])
-                        input_df['away_team'] = le.transform(input_df['away_team'])
-
-                        pred_home = model_home.predict(input_df)[0]
-                        pred_away = model_away.predict(input_df)[0]
+                        _, pred_home, pred_away = predict_match_outcome(
+                            home,
+                            away,
+                            (model_home, model_away, model_context),
+                        )
 
                         result = actual_result_map.get((home, away))
 
@@ -465,19 +590,7 @@ def live_predictions_by_date(request):
 
                         # ✅ Save odds in MatchOdds model
                         if odds:
-                            MatchOdds.objects.update_or_create(
-                                match=prediction,
-                                defaults={
-                                    "home_win": odds.get("home"),
-                                    "draw": odds.get("draw"),
-                                    "away_win": odds.get("away"),
-                                    "over_2_5": odds.get("over25"),
-                                    "under_2_5": odds.get("under25"),
-                                    "btts_yes": odds.get("gg"),
-                                    "btts_no": odds.get("ng"),
-                                    "bookmaker": odds.get("bookmaker"),
-                                }
-                            )
+                            upsert_match_odds(prediction, odds)
 
                         
 
@@ -572,42 +685,153 @@ def top_picks_view(request):
     else:
         picks_qs = TopPick.objects.filter(match_date=match_date)
 
-    # Update actual results for picks if needed (existing util)
-    update_actuals_for_top_picks(picks_qs)
-
-    # Present picks (converted to dicts)
-    picks = picks_qs.select_related("odds").values(
-    "home_team",
-    "away_team",
-    "tip",
-    "actual_tip",
-    "is_correct",
-    "confidence",
-    "match_date",
-    
-    
-)
-
+    pick_keys = list(
+        picks_qs.values(
+            "home_team",
+            "away_team",
+            "match_date",
+        )
+    )
     source = "cached"
 
     # If no picks stored, fallback to compute and store live picks
-    if not picks and not show_past:
+    if not pick_keys and not show_past:
         predictions_by_date = get_top_predictions(limit=10)
         if match_date.strftime("%Y-%m-%d") in predictions_by_date:
             store_top_pick_for_date(predictions_by_date)
             picks_qs = TopPick.objects.filter(match_date=match_date)
-            picks = list(picks_qs.values("home_team", "away_team", "tip", "actual_tip", "is_correct", "confidence", "odds", "match_date"))
+            pick_keys = list(
+                picks_qs.values(
+                    "home_team",
+                    "away_team",
+                    "match_date",
+                )
+            )
             source = "live"
+
+    match_key_to_competition = {}
+    if pick_keys:
+        candidate_dates = sorted({p.get("match_date") for p in pick_keys if p.get("match_date")})
+        candidate_home_teams = sorted({p.get("home_team") for p in pick_keys if p.get("home_team")})
+        candidate_away_teams = sorted({p.get("away_team") for p in pick_keys if p.get("away_team")})
+        competition_rows = MatchPrediction.objects.filter(
+            match_date__in=candidate_dates,
+            home_team__in=candidate_home_teams,
+            away_team__in=candidate_away_teams,
+        ).values("match_date", "home_team", "away_team", "competition")
+        match_key_to_competition = {
+            (row["match_date"], row["home_team"], row["away_team"]): row["competition"]
+            for row in competition_rows
+        }
+        for competition_code, refresh_date in sorted({
+            (row["competition"], row["match_date"])
+            for row in competition_rows
+            if row.get("competition") and row.get("match_date")
+        }):
+            refresh_prediction_statuses(competition_code, refresh_date)
+
+    update_actuals_for_top_picks(picks_qs)
+
+    picks = list(
+        picks_qs.values(
+            "home_team",
+            "away_team",
+            "tip",
+            "actual_tip",
+            "is_correct",
+            "confidence",
+            "odds",
+            "match_date",
+        )
+    )
 
     if label_filter:
         picks = [p for p in picks if p.get("tip") == label_filter]
 
+    enriched_picks = []
+    for pick in picks:
+        raw_home_team = pick.get("home_team")
+        raw_away_team = pick.get("away_team")
+        competition_code = match_key_to_competition.get(
+            (pick.get("match_date"), raw_home_team, raw_away_team)
+        )
+        competition_name = normalize_display_competition_name(
+            competitions.get(competition_code, competition_code),
+            code=competition_code,
+        )
+        meta_home = get_team_metadata(raw_home_team)
+        meta_away = get_team_metadata(raw_away_team)
+        home_name = normalize_display_team_name(
+            meta_home.get("shortName"),
+            fallback=raw_home_team,
+            max_length=24,
+        )
+        away_name = normalize_display_team_name(
+            meta_away.get("shortName"),
+            fallback=raw_away_team,
+            max_length=24,
+        )
+        odds_value = pick.get("odds")
+        if odds_value is None and competition_code:
+            prediction = (
+                MatchPrediction.objects.select_related("odds")
+                .filter(
+                    competition=competition_code,
+                    match_date=pick.get("match_date"),
+                    home_team=raw_home_team,
+                    away_team=raw_away_team,
+                )
+                .first()
+            )
+            if prediction:
+                try:
+                    odds_obj = prediction.odds
+                except MatchOdds.DoesNotExist:
+                    odds_obj = None
+                if odds_obj:
+                    if pick.get("tip") == "1":
+                        odds_value = odds_obj.home_win
+                    elif pick.get("tip") == "2":
+                        odds_value = odds_obj.away_win
+                    elif pick.get("tip") == "X":
+                        odds_value = odds_obj.draw
+                    elif pick.get("tip") == "Over 2.5":
+                        odds_value = odds_obj.over_2_5
+                    elif pick.get("tip") == "GG":
+                        odds_value = odds_obj.btts_yes
+        enriched_pick = dict(pick)
+        enriched_pick["home_team"] = home_name
+        enriched_pick["away_team"] = away_name
+        enriched_pick["fixture"] = f"{home_name} vs {away_name}"
+        enriched_pick["home_logo"] = meta_home.get("crest")
+        enriched_pick["away_logo"] = meta_away.get("crest")
+        enriched_pick["home_initials"] = team_initials(home_name)
+        enriched_pick["away_initials"] = team_initials(away_name)
+        enriched_pick["competition"] = competition_name
+        enriched_pick["competition_code"] = competition_code
+        enriched_pick["competition_logo"] = (
+            static(f"logos/{competition_code}.png") if competition_code in competitions else None
+        )
+        enriched_pick["odds"] = odds_value
+        enriched_pick["match_time"] = get_cached_kickoff_time(
+            competition_code,
+            pick.get("match_date"),
+            raw_home_team,
+            raw_away_team,
+        )
+        enriched_picks.append(enriched_pick)
+
+    paginator = Paginator(enriched_picks, 10)
+    page_number = request.GET.get("page")
+    paginated_picks = paginator.get_page(page_number)
+
     return render(request, "predict/top_picks.html", {
-        "prediction": picks,
+        "prediction": paginated_picks,
+        "page_obj": paginated_picks,
         "filter_label": label_filter,
         "source": source,
         "selected_date": match_date,
-        "show_past": show_past
+        "show_past": show_past,
     })
 
 
@@ -650,38 +874,46 @@ def admin_task_dashboard(request):
     })
 
 
-@csrf_exempt
+@login_required
+@require_POST
 def trigger_task_now(request):
-    if request.method == "POST":
-        task_path = request.POST.get("task_path")
-        try:
-            current_app.send_task(task_path)
-            return JsonResponse({"success": True, "message": f"{task_path} triggered successfully."})
-        except Exception as e:
-            return JsonResponse({"success": False, "error": str(e)})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+    task_path = request.POST.get("task_path", "").strip()
+    allowed_tasks = set(
+        PeriodicTask.objects.exclude(task__isnull=True).exclude(task="").values_list("task", flat=True)
+    )
+    if task_path not in allowed_tasks:
+        return JsonResponse({"success": False, "message": "Task is not allowed."}, status=400)
+
+    try:
+        current_app.send_task(task_path)
+        return JsonResponse({"success": True, "message": f"{task_path} triggered successfully."})
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=500)
 
 
-@csrf_exempt
+@login_required
+@require_POST
 def refresh_cache_now(request):
-    if request.method == "POST":
-        comp = request.POST.get("competition")
-        if comp:
-            df = fetch_training_data_all_seasons(comp)
-            if not df.empty:
-                cache.set(f"training_data_{comp}", df, timeout=60 * 60 * 24 * 7)
-                return JsonResponse({"success": True, "message": f"Cache refreshed for {comp}"})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+    comp = request.POST.get("competition")
+    if comp not in COMPETITIONS:
+        return JsonResponse({"success": False, "message": "Invalid competition."}, status=400)
+
+    df = fetch_training_data_all_seasons(comp)
+    if not df.empty:
+        cache.set(f"training_data_{comp}", df, timeout=60 * 60 * 24 * 7)
+        return JsonResponse({"success": True, "message": f"Cache refreshed for {comp}"})
+    return JsonResponse({"success": False, "message": f"No data fetched for {comp}."}, status=502)
 
 
-@csrf_exempt
+@login_required
+@require_POST
 def clear_cache_now(request):
-    if request.method == "POST":
-        comp = request.POST.get("competition")
-        if comp:
-            cache.delete(f"training_data_{comp}")
-            return JsonResponse({"success": True, "message": f"Cache cleared for {comp}"})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+    comp = request.POST.get("competition")
+    if comp not in COMPETITIONS:
+        return JsonResponse({"success": False, "message": "Invalid competition."}, status=400)
+
+    cache.delete(f"training_data_{comp}")
+    return JsonResponse({"success": True, "message": f"Cache cleared for {comp}"})
 
 
 def results_view(request):
@@ -819,17 +1051,133 @@ def get_team_metadata(name):
     return cache.get(f"team_meta::{name}", {"shortName": name, "crest": None})
 
 
+def normalize_display_team_name(name, fallback=None, max_length=14):
+    candidate = (name or fallback or "").strip()
+    if not candidate:
+        return ""
+
+    candidate = re.sub(r"\s+", " ", candidate.replace(".", " ")).strip()
+    replacements = {
+        "United": "Utd",
+        "Rovers": "Rov",
+        "Wanderers": "Wand",
+        "Athletic": "Ath",
+        "Atletico": "Atleti",
+        "Hotspur": "Spurs",
+        "Saint": "St",
+        "Sankt": "St",
+        "Santa": "Sta",
+        "Borussia": "B.",
+        "Sporting": "Sport",
+        "Deportivo": "Dep.",
+        "Internacional": "Inter",
+    }
+    drop_words = {"FC", "CF", "AC", "SC", "AFC", "CFC", "Club", "de", "da", "del", "the"}
+    preserved_tokens = {"PSG", "AEK", "PAOK", "CFR", "HJK", "AIK", "IFK", "BSC", "VfB", "TSG", "PEC"}
+
+    words = []
+    for raw_word in candidate.split():
+        raw_upper = raw_word.upper()
+        if raw_upper in drop_words:
+            continue
+        if raw_word in preserved_tokens or raw_upper in preserved_tokens:
+            words.append(raw_word if raw_word in preserved_tokens else raw_upper)
+            continue
+        normalized_word = raw_word.capitalize() if raw_word.islower() else raw_word
+        words.append(replacements.get(normalized_word, normalized_word))
+
+    compact = " ".join(words) if words else candidate
+    if len(compact) <= max_length:
+        return compact
+
+    if len(words) >= 2:
+        abbreviated = " ".join(
+            [f"{word[0]}." for word in words[:-1] if word] + [words[-1]]
+        )
+        if len(abbreviated) <= max_length:
+            return abbreviated
+
+    return compact[: max_length - 1].rstrip() + "…"
+
+
+def normalize_display_competition_name(name, code=None, max_length=12):
+    candidate = (name or code or "").strip()
+    if not candidate:
+        return "Unknown"
+
+    explicit_names = {
+        "PL": "PL",
+        "PD": "LL",
+        "SA": "SA",
+        "BL1": "BL",
+        "FL1": "L1",
+        "DED": "ERD",
+        "PPL": "PPL",
+        "ELC": "ELC",
+        "CL": "UCL",
+        "EC": "EURO",
+        "BSA": "BSA",
+        "CLI": "LIB",
+        "WC": "WC",
+    }
+    if code in explicit_names:
+        return explicit_names[code]
+
+    cleanup_map = {
+        "UEFA ": "",
+        "FIFA ": "",
+        "Champions League": "UCL",
+        "Europa League": "UEL",
+        "Conference League": "UECL",
+        "World Cup": "WC",
+        "European Championship": "EURO",
+        "Copa Libertadores": "LIB",
+        "Premier League": "PL",
+        "La Liga": "LL",
+        "Bundesliga": "BL",
+        "Serie A": "SA",
+        "Ligue 1": "L1",
+        "Eredivisie": "ERD",
+        "Championship": "ELC",
+    }
+    normalized = re.sub(r"\s+", " ", candidate).strip()
+    for source_text, replacement in cleanup_map.items():
+        normalized = normalized.replace(source_text, replacement)
+    normalized = re.sub(r"\s+", " ", normalized).strip()
+
+    if len(normalized) <= max_length:
+        return normalized
+    return normalized[: max_length - 1].rstrip() + "…"
+
+
+def team_initials(name):
+    cleaned = re.sub(r"[^A-Za-z0-9 ]+", " ", (name or "").strip())
+    tokens = [token for token in cleaned.split() if token]
+    if not tokens:
+        return "?"
+    if len(tokens) == 1:
+        return tokens[0][:2].upper()
+    return f"{tokens[0][0]}{tokens[1][0]}".upper()
+
+
 NAME_TO_CODE = {v.lower(): k for k, v in competitions.items()}
 
 
 def predictions_view(request):
     match_date = request.GET.get('match_date')
-    predictions = MatchPrediction.objects.all().order_by('match_date')
+    predictions = MatchPrediction.objects.select_related("odds").all().order_by('match_date')
 
     if match_date:
         predictions = predictions.filter(match_date=match_date)
     else:
         predictions = predictions.exclude(status="FINISHED")
+
+    refresh_pairs = list(predictions.values_list("competition", "match_date").distinct())
+    for competition_code, refresh_date in refresh_pairs:
+        if competition_code and refresh_date:
+            refresh_prediction_statuses(competition_code, refresh_date)
+
+    predictions = predictions.select_related("odds")
 
     selected_code = request.GET.get("competition")
     if not selected_code:
@@ -842,16 +1190,21 @@ def predictions_view(request):
     league_table = get_league_table(selected_code)
     top_predictions = get_top_predictions(limit=10)
 
-    # Prefetch odds for all predictions in one query
-    prediction_ids = [p.id for p in predictions]
-    odds_map = {o.match_id: o for o in MatchOdds.objects.filter(match_id__in=prediction_ids)}
     display_data = []
     for p in predictions:
         meta_home = get_team_metadata(p.home_team)
         meta_away = get_team_metadata(p.away_team)
+        home_display_name = normalize_display_team_name(
+            meta_home.get("shortName"),
+            fallback=p.home_team,
+        )
+        away_display_name = normalize_display_team_name(
+            meta_away.get("shortName"),
+            fallback=p.away_team,
+        )
 
-        comp_code = NAME_TO_CODE.get(p.competition.lower().strip(), "default")
-        competition_logo_path = static(f"logos/{p.competition}.png")
+        comp_code = p.competition if p.competition in competitions else NAME_TO_CODE.get(p.competition.lower().strip(), "default")
+        competition_logo_path = static(f"logos/{comp_code}.png")
 
         actual_result = "-:-"
         actual_winner = None
@@ -871,15 +1224,21 @@ def predictions_view(request):
         else:
             winner = "X"
 
-        odds = odds_map.get(getattr(p, "id", None), None)
+        odds = resolve_prediction_odds(p)
+        if winner == "1":
+            display_odds = getattr(odds, "home_win", None) if odds else getattr(p, "odds_home", None)
+        elif winner == "2":
+            display_odds = getattr(odds, "away_win", None) if odds else getattr(p, "odds_away", None)
+        else:
+            display_odds = getattr(odds, "draw", None) if odds else getattr(p, "odds_draw", None)
 
         display_data.append({
-            "home_team": meta_home.get("shortName", p.home_team),
-            "away_team": meta_away.get("shortName", p.away_team),
+            "home_team": home_display_name,
+            "away_team": away_display_name,
             "predicted_home_goals": p.predicted_home_goals,
             "predicted_away_goals": p.predicted_away_goals,
             "match_date": p.match_date.strftime("%Y-%m-%d"),
-            "match_time": p.match_date.strftime("%H:%M") if isinstance(p.match_date, datetime) else "",
+            "match_time": get_cached_kickoff_time(comp_code, p.match_date, p.home_team, p.away_team),
             "competition": p.competition,
             "competition_code": comp_code,
             "status": p.status,
@@ -897,12 +1256,16 @@ def predictions_view(request):
             "odds_gg": getattr(p, "odds_gg", None),
             "odds_over_25": getattr(p, "odds_over_25", None),
             "odds": odds,
+            "display_odds": display_odds,
         })
 
     for row in league_table:
         team_name = row["team"]["name"]
         meta = cache.get(f"team_meta::{team_name}", {})
-        row["team"]["shortName"] = meta.get("shortName", team_name)
+        row["team"]["shortName"] = normalize_display_team_name(
+            meta.get("shortName"),
+            fallback=team_name,
+        )
         row["team"]["crest"] = meta.get("crest", static("logos/default.png"))
 
     paginator = Paginator(display_data, 10)
@@ -988,14 +1351,15 @@ def league_table_view(request, competition_code):
     })
 
 
-@csrf_exempt
+@login_required
+@require_POST
 def refresh_league_table_cache(request):
-    if request.method == "POST":
-        comp = request.POST.get("competition")
-        if comp:
-            table = get_league_table(comp)  # Forces fresh fetch and recache
-            return JsonResponse({"success": True, "message": f"Refreshed {comp}"})
-    return JsonResponse({"success": False, "message": "Invalid request"})
+    comp = request.POST.get("competition")
+    if comp not in COMPETITIONS:
+        return JsonResponse({"success": False, "message": "Invalid competition."}, status=400)
+
+    get_league_table(comp)
+    return JsonResponse({"success": True, "message": f"Refreshed {comp}"})
 
 
 def actual_results_view(request):

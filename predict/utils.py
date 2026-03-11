@@ -2,43 +2,71 @@
 
 
 import os
+import re
 import time
-import requests
-import pandas as pd
+import logging
+from collections import defaultdict
+from datetime import date, datetime, timedelta
+
 import numpy as np
-from datetime import datetime, timedelta, date
+import pandas as pd
+import requests
 from django.core.cache import cache
 from django.utils import timezone
-from sklearn.preprocessing import LabelEncoder
 from sklearn.ensemble import RandomForestRegressor
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import mean_absolute_error, mean_squared_error
+from sklearn.metrics import mean_squared_error
+from sklearn.preprocessing import LabelEncoder
 
-# Optional: odds config (set these in your environment if you want odds)
-ODDS_API_KEY = os.getenv("ODDS_API_KEY", None)
-ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "361d4c96a69e73be8db0953eca372dc1")  # or "rapidapi"
+from .constants import (
+    API_TOKEN,
+    BASE_URL,
+    COMPETITIONS,
+    MODEL_CACHE_TIMEOUT,
+    ODDS_API_KEY,
+    TRAINING_CACHE_TIMEOUT,
+    get_team_metadata,
+    model_cache_key,
+    training_data_cache_key,
+)
 
-# Football-data API config (use env var if possible)
-API_TOKEN = os.getenv("FOOTBALL_DATA_API_KEY", "7419be10abd14d7fb752e6fe6491e38f")
-BASE_URL = os.getenv("FOOTBALL_DATA_BASE_URL", "https://api.football-data.org/v4")
 HEADERS = {"X-Auth-Token": API_TOKEN}
+ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "the-odds-api")
+logger = logging.getLogger(__name__)
 
-# import competitions & get_team_metadata helper defined elsewhere in your project
-try:
-    from predict.constants import COMPETITIONS, get_team_metadata
-except Exception:
-    # fallback minimal COMPETITIONS if constants unavailable (prevents import errors)
-    COMPETITIONS = {
-        "PL": "Premier League",
-        "PD": "La Liga",
-        "SA": "Serie A",
-        "BL1": "Bundesliga",
-        "FL1": "Ligue 1",
-        "DED": "Eredivisie",
-    }
 
-    def get_team_metadata(name):
-        return {"shortName": name, "crest": None}
+def _normalize_team_lookup_value(name):
+    candidate = (name or "").strip().lower()
+    if not candidate:
+        return ""
+    candidate = candidate.replace("&", " and ")
+    candidate = re.sub(r"[^\w\s]", " ", candidate)
+    candidate = re.sub(r"\b(fc|cf|ac|sc|afc|club|de|da|del)\b", " ", candidate)
+    candidate = re.sub(r"\s+", " ", candidate).strip()
+    return candidate
+
+
+def _team_name_aliases(name):
+    aliases = set()
+    raw_name = (name or "").strip()
+    if raw_name:
+        aliases.add(_normalize_team_lookup_value(raw_name))
+        meta = get_team_metadata(raw_name)
+        short_name = (meta or {}).get("shortName")
+        if short_name:
+            aliases.add(_normalize_team_lookup_value(short_name))
+    aliases.discard("")
+    return aliases
+
+
+def get_current_season_start_year(reference_date=None):
+    reference_date = reference_date or datetime.now()
+    return reference_date.year if reference_date.month >= 7 else reference_date.year - 1
+
+
+def get_default_training_seasons(reference_date=None, history_window=3):
+    current_season = get_current_season_start_year(reference_date)
+    first_season = max(2023, current_season - history_window + 1)
+    return list(range(first_season, current_season + 1))
 
 
 # ---------- API fetching helpers ----------
@@ -50,13 +78,34 @@ def _get_json(url, headers=None, params=None, retries=1, delay=2):
             r = requests.get(url, headers=headers, params=params, timeout=15)
             if r.status_code == 200:
                 return r.json()
-            # if 429 or server error, wait and retry
             if r.status_code >= 500 or r.status_code == 429:
+                logger.warning(
+                    "API request failed with retryable status %s for %s params=%s attempt=%s/%s",
+                    r.status_code,
+                    url,
+                    params,
+                    attempt + 1,
+                    retries,
+                )
                 time.sleep(delay)
             else:
-                # client error (bad request / unauthorized) -> return None
+                logger.error(
+                    "API request failed with status %s for %s params=%s response=%s",
+                    r.status_code,
+                    url,
+                    params,
+                    r.text[:300],
+                )
                 break
         except requests.RequestException as e:
+            logger.warning(
+                "API request exception for %s params=%s attempt=%s/%s error=%s",
+                url,
+                params,
+                attempt + 1,
+                retries,
+                e,
+            )
             time.sleep(delay)
     return None
 
@@ -114,13 +163,25 @@ def fetch_training_data(competition_code, seasons=None):
     Collect finished matches for a competition across seasons.
     Returns a DataFrame with columns: home_team, away_team, home_goals, away_goals, utc_date
     """
-    headers = {"X-Auth-Token": API_TOKEN}
+    if not API_TOKEN:
+        logger.error(
+            "FOOTBALL_DATA_API_KEY is not configured. Training data fetch for %s cannot proceed.",
+            competition_code,
+        )
+        return pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"])
+
     if seasons is None:
-        seasons = list(range(2019, datetime.now().year + 1))
+        seasons = get_default_training_seasons()
     all_matches = []
     for season in seasons:
         try:
             matches = fetch_matches_by_season(API_TOKEN, competition_code, season)
+            if matches == []:
+                logger.info(
+                    "No season data returned for %s season=%s. This may indicate an auth issue, API limit, or no coverage.",
+                    competition_code,
+                    season,
+                )
             for m in matches:
                 if m.get("status") == "FINISHED":
                     all_matches.append({
@@ -130,7 +191,13 @@ def fetch_training_data(competition_code, seasons=None):
                         "away_goals": m["score"]["fullTime"]["away"],
                         "utc_date": m.get("utcDate")
                     })
-        except Exception:
+        except Exception as exc:
+            logger.exception(
+                "Failed to fetch training data for competition=%s season=%s error=%s",
+                competition_code,
+                season,
+                exc,
+            )
             continue
     return pd.DataFrame(all_matches)
 
@@ -139,17 +206,26 @@ def fetch_training_data_all_seasons(competition_code, seasons=None):
     """
     Caches the training data for a competition. Returns DataFrame.
     """
-    cache_key = f"training_data_{competition_code}"
+    cache_key = training_data_cache_key(competition_code)
     cached = cache.get(cache_key)
     if cached is not None:
-        # cached is expected to be a DataFrame when stored
-        return cached
+        if getattr(cached, "empty", False):
+            logger.warning(
+                "Discarding stale empty cached training data for %s and retrying remote fetch.",
+                competition_code,
+            )
+            cache.delete(cache_key)
+        else:
+            return cached
 
     df = fetch_training_data(competition_code, seasons=seasons)
-    # Ensure DataFrame shape even if empty
     if df is None or df.empty:
-        df = pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"])
-    cache.set(cache_key, df, timeout=60 * 60 * 24 * 7)  # cache for 1 week
+        logger.warning(
+            "Training data fetch returned no rows for %s. Skipping cache write so a later retry can recover.",
+            competition_code,
+        )
+        return pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"])
+    cache.set(cache_key, df, timeout=TRAINING_CACHE_TIMEOUT)
     return df
 
 
@@ -331,7 +407,434 @@ def build_features(df):
     return pd.DataFrame(features)
 
 
-def train_models(X, y_home, y_away):
+def _new_team_profile():
+    return {
+        "overall_scored": [],
+        "overall_conceded": [],
+        "overall_points": [],
+        "overall_goal_diff": [],
+        "overall_clean_sheet": [],
+        "overall_failed_to_score": [],
+        "home_scored": [],
+        "home_conceded": [],
+        "home_points": [],
+        "home_goal_diff": [],
+        "home_clean_sheet": [],
+        "home_failed_to_score": [],
+        "away_scored": [],
+        "away_conceded": [],
+        "away_points": [],
+        "away_goal_diff": [],
+        "away_clean_sheet": [],
+        "away_failed_to_score": [],
+        "last_match_date": None,
+    }
+
+
+def _weighted_mean(values, default):
+    if not values:
+        return float(default)
+    arr = np.asarray(values, dtype=float)
+    weights = np.arange(1, len(arr) + 1, dtype=float)
+    return float(np.dot(arr, weights) / weights.sum())
+
+
+def _weighted_rate(flags, default):
+    if not flags:
+        return float(default)
+    arr = np.asarray(flags, dtype=float)
+    weights = np.arange(1, len(arr) + 1, dtype=float)
+    return float(np.dot(arr, weights) / weights.sum())
+
+
+def _get_recent(values, lookback):
+    return list(values[-lookback:]) if values else []
+
+
+def _rest_days(last_match_date, current_date, default=7.0):
+    if last_match_date is None or current_date is None or pd.isna(last_match_date) or pd.isna(current_date):
+        return float(default)
+    delta = (current_date - last_match_date).days
+    return float(np.clip(delta, 2, 14))
+
+
+def _summarize_profile(profile, venue, lookback, scored_default, conceded_default, points_default, current_date):
+    venue_scored_key = f"{venue}_scored"
+    venue_conceded_key = f"{venue}_conceded"
+    venue_points_key = f"{venue}_points"
+    venue_goal_diff_key = f"{venue}_goal_diff"
+    venue_clean_sheet_key = f"{venue}_clean_sheet"
+    venue_failed_to_score_key = f"{venue}_failed_to_score"
+
+    overall_scored = _get_recent(profile["overall_scored"], lookback)
+    overall_conceded = _get_recent(profile["overall_conceded"], lookback)
+    overall_points = _get_recent(profile["overall_points"], lookback)
+    overall_goal_diff = _get_recent(profile["overall_goal_diff"], lookback)
+    overall_clean_sheet = _get_recent(profile["overall_clean_sheet"], lookback)
+    overall_failed_to_score = _get_recent(profile["overall_failed_to_score"], lookback)
+
+    venue_scored = _get_recent(profile[venue_scored_key], lookback)
+    venue_conceded = _get_recent(profile[venue_conceded_key], lookback)
+    venue_points = _get_recent(profile[venue_points_key], lookback)
+    venue_goal_diff = _get_recent(profile[venue_goal_diff_key], lookback)
+    venue_clean_sheet = _get_recent(profile[venue_clean_sheet_key], lookback)
+    venue_failed_to_score = _get_recent(profile[venue_failed_to_score_key], lookback)
+
+    venue_weight = min(len(venue_scored), lookback) / float(lookback or 1)
+    overall_weight = 1.0 - venue_weight
+
+    recent_scored = (
+        venue_weight * _weighted_mean(venue_scored, scored_default)
+        + overall_weight * _weighted_mean(overall_scored, scored_default)
+    )
+    recent_conceded = (
+        venue_weight * _weighted_mean(venue_conceded, conceded_default)
+        + overall_weight * _weighted_mean(overall_conceded, conceded_default)
+    )
+    form = (
+        venue_weight * _weighted_mean(venue_points, points_default)
+        + overall_weight * _weighted_mean(overall_points, points_default)
+    )
+    goal_diff_form = (
+        venue_weight * _weighted_mean(venue_goal_diff, scored_default - conceded_default)
+        + overall_weight * _weighted_mean(overall_goal_diff, scored_default - conceded_default)
+    )
+    clean_sheet_rate = (
+        venue_weight * _weighted_rate(venue_clean_sheet, 0.25)
+        + overall_weight * _weighted_rate(overall_clean_sheet, 0.25)
+    )
+    fail_to_score_rate = (
+        venue_weight * _weighted_rate(venue_failed_to_score, 0.2)
+        + overall_weight * _weighted_rate(overall_failed_to_score, 0.2)
+    )
+
+    return {
+        "recent_scored": float(recent_scored),
+        "recent_conceded": float(recent_conceded),
+        "form": float(form),
+        "goal_diff_form": float(goal_diff_form),
+        "clean_sheet_rate": float(clean_sheet_rate),
+        "fail_to_score_rate": float(fail_to_score_rate),
+        "rest_days": _rest_days(profile.get("last_match_date"), current_date),
+        "matches_seen": len(profile["overall_scored"]),
+    }
+
+
+def _summarize_head_to_head(home_team, away_team, h2h_matches, lookback, default_total_goals):
+    recent_matches = h2h_matches[-lookback:]
+    if not recent_matches:
+        return {
+            "home_points": 1.35,
+            "goal_diff": 0.0,
+            "total_goals": float(default_total_goals),
+            "match_count": 0.0,
+        }
+
+    home_points = []
+    home_goal_diff = []
+    total_goals = []
+    for match in recent_matches:
+        if match["home_team"] == home_team:
+            home_goals = float(match["home_goals"])
+            away_goals = float(match["away_goals"])
+        else:
+            home_goals = float(match["away_goals"])
+            away_goals = float(match["home_goals"])
+        home_points.append(3 if home_goals > away_goals else 1 if home_goals == away_goals else 0)
+        home_goal_diff.append(home_goals - away_goals)
+        total_goals.append(home_goals + away_goals)
+
+    return {
+        "home_points": _weighted_mean(home_points, 1.35),
+        "goal_diff": _weighted_mean(home_goal_diff, 0.0),
+        "total_goals": _weighted_mean(total_goals, default_total_goals),
+        "match_count": float(len(recent_matches)),
+    }
+
+
+def _expected_home_result_from_elo(home_elo, away_elo, home_advantage=55.0):
+    adjusted_home = float(home_elo) + float(home_advantage)
+    adjusted_away = float(away_elo)
+    return 1.0 / (1.0 + 10.0 ** ((adjusted_away - adjusted_home) / 400.0))
+
+
+def _update_elo_ratings(elo_ratings, home_team, away_team, home_goals, away_goals, k_factor=24.0):
+    home_rating = float(elo_ratings.get(home_team, 1500.0))
+    away_rating = float(elo_ratings.get(away_team, 1500.0))
+    expected_home = _expected_home_result_from_elo(home_rating, away_rating)
+    actual_home = 1.0 if home_goals > away_goals else 0.5 if home_goals == away_goals else 0.0
+    margin_multiplier = 1.0 + min(abs(float(home_goals) - float(away_goals)), 3.0) * 0.15
+    delta = k_factor * margin_multiplier * (actual_home - expected_home)
+    elo_ratings[home_team] = home_rating + delta
+    elo_ratings[away_team] = away_rating - delta
+
+
+def _build_feature_row(home_team, away_team, team_profiles, h2h_profiles, league_defaults, lookback, current_date, elo_ratings=None):
+    home_profile = team_profiles.get(home_team, _new_team_profile())
+    away_profile = team_profiles.get(away_team, _new_team_profile())
+    elo_ratings = elo_ratings or {}
+    home_elo = float(elo_ratings.get(home_team, 1500.0))
+    away_elo = float(elo_ratings.get(away_team, 1500.0))
+    home_summary = _summarize_profile(
+        home_profile,
+        venue="home",
+        lookback=lookback,
+        scored_default=league_defaults["home_goals"],
+        conceded_default=league_defaults["away_goals"],
+        points_default=1.45,
+        current_date=current_date,
+    )
+    away_summary = _summarize_profile(
+        away_profile,
+        venue="away",
+        lookback=lookback,
+        scored_default=league_defaults["away_goals"],
+        conceded_default=league_defaults["home_goals"],
+        points_default=1.1,
+        current_date=current_date,
+    )
+    h2h_summary = _summarize_head_to_head(
+        home_team,
+        away_team,
+        h2h_profiles.get(tuple(sorted((home_team, away_team))), []),
+        lookback=max(3, min(lookback, 5)),
+        default_total_goals=league_defaults["home_goals"] + league_defaults["away_goals"],
+    )
+
+    return {
+        "home_recent_scored": home_summary["recent_scored"],
+        "home_recent_conceded": home_summary["recent_conceded"],
+        "away_recent_scored": away_summary["recent_scored"],
+        "away_recent_conceded": away_summary["recent_conceded"],
+        "home_form": home_summary["form"],
+        "away_form": away_summary["form"],
+        "home_goal_diff_form": home_summary["goal_diff_form"],
+        "away_goal_diff_form": away_summary["goal_diff_form"],
+        "home_clean_sheet_rate": home_summary["clean_sheet_rate"],
+        "away_clean_sheet_rate": away_summary["clean_sheet_rate"],
+        "home_fail_to_score_rate": home_summary["fail_to_score_rate"],
+        "away_fail_to_score_rate": away_summary["fail_to_score_rate"],
+        "home_rest_days": home_summary["rest_days"],
+        "away_rest_days": away_summary["rest_days"],
+        "home_strength": home_summary["recent_scored"] - away_summary["recent_conceded"],
+        "away_strength": away_summary["recent_scored"] - home_summary["recent_conceded"],
+        "form_gap": home_summary["form"] - away_summary["form"],
+        "goal_balance_gap": home_summary["goal_diff_form"] - away_summary["goal_diff_form"],
+        "venue_attack_gap": home_summary["recent_scored"] - away_summary["recent_scored"],
+        "venue_defense_gap": away_summary["recent_conceded"] - home_summary["recent_conceded"],
+        "rest_gap": home_summary["rest_days"] - away_summary["rest_days"],
+        "h2h_home_points": h2h_summary["home_points"],
+        "h2h_goal_diff": h2h_summary["goal_diff"],
+        "h2h_total_goals": h2h_summary["total_goals"],
+        "h2h_match_count": h2h_summary["match_count"],
+        "home_elo": home_elo,
+        "away_elo": away_elo,
+        "elo_gap": home_elo - away_elo,
+        "elo_home_win_prob": _expected_home_result_from_elo(home_elo, away_elo),
+        "home_advantage": league_defaults["home_goals"] - league_defaults["away_goals"],
+    }
+
+
+def _update_team_profile(profile, goals_for, goals_against, venue, match_date):
+    points = 3 if goals_for > goals_against else 1 if goals_for == goals_against else 0
+    goal_diff = goals_for - goals_against
+    clean_sheet = 1 if goals_against == 0 else 0
+    failed_to_score = 1 if goals_for == 0 else 0
+
+    profile["overall_scored"].append(float(goals_for))
+    profile["overall_conceded"].append(float(goals_against))
+    profile["overall_points"].append(points)
+    profile["overall_goal_diff"].append(float(goal_diff))
+    profile["overall_clean_sheet"].append(clean_sheet)
+    profile["overall_failed_to_score"].append(failed_to_score)
+
+    profile[f"{venue}_scored"].append(float(goals_for))
+    profile[f"{venue}_conceded"].append(float(goals_against))
+    profile[f"{venue}_points"].append(points)
+    profile[f"{venue}_goal_diff"].append(float(goal_diff))
+    profile[f"{venue}_clean_sheet"].append(clean_sheet)
+    profile[f"{venue}_failed_to_score"].append(failed_to_score)
+    profile["last_match_date"] = match_date if match_date is not None else profile.get("last_match_date")
+
+
+def _build_profiles_from_history(history):
+    team_profiles = defaultdict(_new_team_profile)
+    h2h_profiles = defaultdict(list)
+    for _, row in history.iterrows():
+        match_date = row.get("utc_date")
+        home_team = row["home_team"]
+        away_team = row["away_team"]
+        home_goals = float(row["home_goals"])
+        away_goals = float(row["away_goals"])
+
+        _update_team_profile(team_profiles[home_team], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away_team], away_goals, home_goals, "away", match_date)
+        h2h_profiles[tuple(sorted((home_team, away_team)))].append({
+            "home_team": home_team,
+            "away_team": away_team,
+            "home_goals": home_goals,
+            "away_goals": away_goals,
+        })
+    return dict(team_profiles), dict(h2h_profiles)
+
+
+def build_training_features(df, lookback=8):
+    """
+    Build deterministic rolling features from finished match history.
+    This avoids direct team-ID memorization and reduces skew against unseen teams.
+    """
+    expected_columns = [
+        "home_recent_scored",
+        "home_recent_conceded",
+        "away_recent_scored",
+        "away_recent_conceded",
+        "home_strength",
+        "away_strength",
+        "home_form",
+        "away_form",
+        "home_goal_diff_form",
+        "away_goal_diff_form",
+        "home_clean_sheet_rate",
+        "away_clean_sheet_rate",
+        "home_fail_to_score_rate",
+        "away_fail_to_score_rate",
+        "home_rest_days",
+        "away_rest_days",
+        "form_gap",
+        "goal_balance_gap",
+        "venue_attack_gap",
+        "venue_defense_gap",
+        "rest_gap",
+        "h2h_home_points",
+        "h2h_goal_diff",
+        "h2h_total_goals",
+        "h2h_match_count",
+        "home_elo",
+        "away_elo",
+        "elo_gap",
+        "elo_home_win_prob",
+        "home_advantage",
+    ]
+    if df is None or df.empty:
+        return pd.DataFrame(columns=expected_columns), pd.Series(dtype=float), pd.Series(dtype=float), {
+            "history": pd.DataFrame(columns=["home_team", "away_team", "home_goals", "away_goals", "utc_date"]),
+            "league_home_goals": 1.4,
+            "league_away_goals": 1.1,
+            "lookback": lookback,
+            "feature_columns": expected_columns,
+            "team_profiles": {},
+            "h2h_profiles": {},
+            "elo_ratings": {},
+        }
+
+    history = df.dropna(subset=["home_team", "away_team", "home_goals", "away_goals"]).copy()
+    if "utc_date" in history.columns:
+        history["utc_date"] = pd.to_datetime(history["utc_date"], errors="coerce")
+        history = history.sort_values("utc_date", na_position="last").reset_index(drop=True)
+    else:
+        history = history.reset_index(drop=True)
+
+    league_home_goals = float(history["home_goals"].mean()) if not history.empty else 1.4
+    league_away_goals = float(history["away_goals"].mean()) if not history.empty else 1.1
+
+    league_defaults = {
+        "home_goals": league_home_goals,
+        "away_goals": league_away_goals,
+    }
+    team_profiles = defaultdict(_new_team_profile)
+    h2h_profiles = defaultdict(list)
+    elo_ratings = defaultdict(lambda: 1500.0)
+    feature_rows = []
+
+    for _, row in history.iterrows():
+        home = row["home_team"]
+        away = row["away_team"]
+        match_date = row.get("utc_date")
+        feature_rows.append(
+            _build_feature_row(
+                home,
+                away,
+                team_profiles,
+                h2h_profiles,
+                league_defaults,
+                lookback,
+                match_date,
+                elo_ratings,
+            )
+        )
+
+        home_goals = float(row["home_goals"])
+        away_goals = float(row["away_goals"])
+
+        _update_team_profile(team_profiles[home], home_goals, away_goals, "home", match_date)
+        _update_team_profile(team_profiles[away], away_goals, home_goals, "away", match_date)
+        _update_elo_ratings(elo_ratings, home, away, home_goals, away_goals)
+        h2h_profiles[tuple(sorted((home, away)))].append({
+            "home_team": home,
+            "away_team": away,
+            "home_goals": home_goals,
+            "away_goals": away_goals,
+        })
+
+    X = pd.DataFrame(feature_rows, columns=expected_columns).fillna(0)
+    y_home = history["home_goals"].astype(float)
+    y_away = history["away_goals"].astype(float)
+    model_context = {
+        "history": history[["home_team", "away_team", "home_goals", "away_goals", "utc_date"]].copy(),
+        "league_home_goals": league_home_goals,
+        "league_away_goals": league_away_goals,
+        "lookback": lookback,
+        "feature_columns": expected_columns,
+        "team_profiles": dict(team_profiles),
+        "h2h_profiles": dict(h2h_profiles),
+        "elo_ratings": dict(elo_ratings),
+    }
+    return X, y_home, y_away, model_context
+
+
+def build_fixture_features(home_team, away_team, model_context):
+    history = (model_context or {}).get("history")
+    lookback = (model_context or {}).get("lookback", 8)
+    league_home_goals = float((model_context or {}).get("league_home_goals", 1.4))
+    league_away_goals = float((model_context or {}).get("league_away_goals", 1.1))
+    feature_columns = (model_context or {}).get("feature_columns")
+
+    if history is None or history.empty:
+        row = _build_feature_row(
+            home_team,
+            away_team,
+            {},
+            {},
+            {"home_goals": league_home_goals, "away_goals": league_away_goals},
+            lookback,
+            None,
+        )
+        return pd.DataFrame([row], columns=feature_columns)
+
+    team_profiles = (model_context or {}).get("team_profiles") or {}
+    h2h_profiles = (model_context or {}).get("h2h_profiles") or {}
+    elo_ratings = (model_context or {}).get("elo_ratings") or {}
+    if not team_profiles or not h2h_profiles:
+        team_profiles, h2h_profiles = _build_profiles_from_history(history)
+
+    current_date = None
+    if "utc_date" in history.columns and not history["utc_date"].isna().all():
+        current_date = history["utc_date"].max()
+
+    row = _build_feature_row(
+        home_team,
+        away_team,
+        team_profiles,
+        h2h_profiles,
+        {"home_goals": league_home_goals, "away_goals": league_away_goals},
+        lookback,
+        current_date,
+        elo_ratings,
+    )
+    return pd.DataFrame([row], columns=feature_columns)
+
+
+def train_models(X, y_home, y_away, sample_weight=None):
     """
     Trains two regressors for home and away goals.
     - X: DataFrame (may contain string team names or numeric columns)
@@ -341,16 +844,13 @@ def train_models(X, y_home, y_away):
     label_encoder = None
     X_train = X.copy()
 
-    # If X contains string team names, encode them (backwards compatible)
     if "home_team" in X_train.columns and X_train["home_team"].dtype == object:
-        # encode both team columns with a shared LabelEncoder
         label_encoder = LabelEncoder()
         unique = pd.concat([X_train["home_team"], X_train["away_team"]]).unique()
         label_encoder.fit(unique)
         X_train["home_team"] = label_encoder.transform(X_train["home_team"])
         X_train["away_team"] = label_encoder.transform(X_train["away_team"])
 
-    # if X_train still contains non-numeric columns, try to convert or one-hot encode
     X_numeric = X_train.select_dtypes(include=[np.number])
     non_numeric = [c for c in X_train.columns if c not in X_numeric.columns]
     if non_numeric:
@@ -358,21 +858,35 @@ def train_models(X, y_home, y_away):
 
     X_numeric = X_numeric.fillna(0)
 
-    # Train/test split (time-based shuffle=False can be used, but we use random here for stability)
+    split_index = max(1, int(len(X_numeric) * 0.8))
+    sample_weight = None if sample_weight is None else np.asarray(sample_weight, dtype=float)
+
     if len(X_numeric) < 10:
-        # small dataset -> no split
         X_tr, X_te = X_numeric, X_numeric
         yh_tr, yh_te = y_home, y_home
         ya_tr, ya_te = y_away, y_away
+        sw_tr = sample_weight
     else:
-        X_tr, X_te, yh_tr, yh_te = train_test_split(X_numeric, y_home, test_size=0.2, random_state=42)
-        _, _, ya_tr, ya_te = train_test_split(X_numeric, y_away, test_size=0.2, random_state=42)
+        X_tr, X_te = X_numeric.iloc[:split_index], X_numeric.iloc[split_index:]
+        yh_tr, yh_te = y_home.iloc[:split_index], y_home.iloc[split_index:]
+        ya_tr, ya_te = y_away.iloc[:split_index], y_away.iloc[split_index:]
+        sw_tr = sample_weight[:split_index] if sample_weight is not None else None
 
-    model_home = RandomForestRegressor(n_estimators=200, random_state=42)
-    model_away = RandomForestRegressor(n_estimators=200, random_state=42)
+    model_home = RandomForestRegressor(
+        n_estimators=300,
+        random_state=42,
+        min_samples_leaf=2,
+        n_jobs=-1,
+    )
+    model_away = RandomForestRegressor(
+        n_estimators=300,
+        random_state=42,
+        min_samples_leaf=2,
+        n_jobs=-1,
+    )
 
-    model_home.fit(X_tr, yh_tr)
-    model_away.fit(X_tr, ya_tr)
+    model_home.fit(X_tr, yh_tr, sample_weight=sw_tr)
+    model_away.fit(X_tr, ya_tr, sample_weight=sw_tr)
 
     # quick metrics (best-effort)
     try:
@@ -384,6 +898,35 @@ def train_models(X, y_home, y_away):
     print(f"[ML] Trained models; home_rmse={home_rmse}, away_rmse={away_rmse}")
 
     return model_home, model_away, label_encoder
+
+
+def train_competition_models(training_df, lookback=8):
+    X, y_home, y_away, model_context = build_training_features(training_df, lookback=lookback)
+    sample_weight = np.linspace(0.35, 1.0, num=len(X)) if len(X) else None
+    model_home, model_away, _ = train_models(X, y_home, y_away, sample_weight=sample_weight)
+    return model_home, model_away, model_context
+
+
+def get_or_train_model_bundle(competition_code, force_refresh=False):
+    cache_key = model_cache_key(competition_code)
+    if not force_refresh:
+        cached_bundle = cache.get(cache_key)
+        if (
+            isinstance(cached_bundle, tuple)
+            and len(cached_bundle) == 3
+            and isinstance(cached_bundle[2], dict)
+            and "feature_columns" in cached_bundle[2]
+            and "team_profiles" in cached_bundle[2]
+        ):
+            return cached_bundle
+
+    training_df = fetch_training_data_all_seasons(competition_code)
+    if training_df.empty:
+        return None
+
+    bundle = train_competition_models(training_df)
+    cache.set(cache_key, bundle, timeout=MODEL_CACHE_TIMEOUT)
+    return bundle
 
 
 def predict_match_outcome(home_team, away_team, models, label_encoder=None):
@@ -406,6 +949,8 @@ def predict_match_outcome(home_team, away_team, models, label_encoder=None):
         except Exception:
             # unknown team -> fallback zeros
             X = np.array([[0, 0]])
+    elif isinstance(model_extra, dict):
+        X = build_fixture_features(home_team, away_team, model_extra).fillna(0)
     else:
         # If model expects numeric features (no encoder), try building row from model_extra (features DF)
         try:
@@ -485,24 +1030,26 @@ def save_predictions(matches, model_home=None, model_away=None, le=None, match_d
             mdate = match_date or (utc[:10] if utc else None)
 
             # If models provided: prepare input for prediction
-            if (model_home is not None) and (model_away is not None) and le is not None:
-                # Create one-row DataFrame with encoded teams
-                try:
-                    input_df = pd.DataFrame({"home_team": [home], "away_team": [away]})
-                    input_df["home_team"] = le.transform(input_df["home_team"])
-                    input_df["away_team"] = le.transform(input_df["away_team"])
-                except Exception:
-                    # unknown team in encoder -> skip
-                    print(f"[WARN] Unknown team(s) {home} / {away} for encoder; skipping")
-                    continue
+            if (model_home is not None) and (model_away is not None):
+                if isinstance(le, dict):
+                    _, ph, pa = predict_match_outcome(home, away, (model_home, model_away, le))
+                elif le is not None:
+                    try:
+                        input_df = pd.DataFrame({"home_team": [home], "away_team": [away]})
+                        input_df["home_team"] = le.transform(input_df["home_team"])
+                        input_df["away_team"] = le.transform(input_df["away_team"])
+                    except Exception:
+                        print(f"[WARN] Unknown team(s) {home} / {away} for encoder; skipping")
+                        continue
 
-                try:
-                    ph = model_home.predict(input_df)[0]
-                    pa = model_away.predict(input_df)[0]
-                except Exception:
-                    # if models expect numeric X with different schema, try fallback: train simple models
-                    ph = float(model_home.predict(input_df)[0]) if hasattr(model_home, "predict") else 1.0
-                    pa = float(model_away.predict(input_df)[0]) if hasattr(model_away, "predict") else 1.0
+                    try:
+                        ph = model_home.predict(input_df)[0]
+                        pa = model_away.predict(input_df)[0]
+                    except Exception:
+                        ph = float(model_home.predict(input_df)[0]) if hasattr(model_home, "predict") else 1.0
+                        pa = float(model_away.predict(input_df)[0]) if hasattr(model_away, "predict") else 1.0
+                else:
+                    _, ph, pa = predict_match_outcome(home, away, (model_home, model_away, None))
 
                 predicted_home_goals = int(round(np.clip(ph, 0, 10)))
                 predicted_away_goals = int(round(np.clip(pa, 0, 10)))
@@ -607,7 +1154,7 @@ def fetch_odds_for_date(odds_api_key, sport_key="soccer_epl", regions="uk,eu", m
         return []
 
     # Example: the-odds-api endpoint (v4) -- adjust if using RapidAPI
-    if ODDS_PROVIDER == "361d4c96a69e73be8db0953eca372dc1":
+    if ODDS_PROVIDER == "the-odds-api":
         url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds"
         params = {
             "apiKey": odds_api_key,
@@ -716,7 +1263,7 @@ def attach_odds_to_predictions(match_predictions, odds_list):
 # ---------- top picks helpers (unchanged from your code, but included) ----------
 def get_top_predictions(limit=10):
     today = date.today()
-    matches = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date")
+    matches = MatchPrediction.objects.select_related("odds").filter(match_date__gte=today).order_by("match_date")
 
     picks_by_date = {}
     tip_priority = {"Over 2.5": 3, "GG": 2, "1": 1, "2": 1, "X": 0}
@@ -755,24 +1302,22 @@ def get_top_predictions(limit=10):
                     reverse=True
                 )[0]
 
-            # --- Fetch odds for this match ---
-            odds = fetch_odds_for_match({
-                "homeTeam": {"name": m.home_team},
-                "awayTeam": {"name": m.away_team}
-            }, competition_code=m.competition.code)
-
             odds_value = None
-            if odds:
+            try:
+                odds_obj = m.odds
+            except MatchOdds.DoesNotExist:
+                odds_obj = None
+            if odds_obj:
                 if best_tip[0] == "1":
-                    odds_value = odds.get("home")
+                    odds_value = odds_obj.home_win
                 elif best_tip[0] == "2":
-                    odds_value = odds.get("away")
+                    odds_value = odds_obj.away_win
                 elif best_tip[0] == "X":
-                    odds_value = odds.get("draw")
+                    odds_value = odds_obj.draw
                 elif best_tip[0] == "Over 2.5":
-                    odds_value = odds.get("over25")
+                    odds_value = odds_obj.over_2_5
                 elif best_tip[0] == "GG":
-                    odds_value = None  # BTTS not in odds API
+                    odds_value = odds_obj.btts_yes
 
             match_day = m.match_date.strftime("%Y-%m-%d")
             picks_by_date.setdefault(match_day, []).append({
@@ -813,6 +1358,7 @@ def store_top_pick_for_date(predictions_by_date):
                 away_team=p["away_team"],
                 tip=p["tip"],
                 confidence=p.get("confidence", 0),
+                odds=p.get("odds"),
             ))
     if all_picks:
         TopPick.objects.bulk_create(all_picks)
@@ -829,13 +1375,20 @@ def update_actuals_for_top_picks(picks_qs):
     to_update = picks_qs.filter(actual_tip__isnull=True)
     updated = 0
     for pick in to_update:
+        pick_home_aliases = _team_name_aliases(pick.home_team)
+        pick_away_aliases = _team_name_aliases(pick.away_team)
+
+        if not pick_home_aliases or not pick_away_aliases:
+            continue
+
         # try to match the corresponding MatchPrediction
         match_qs = MatchPrediction.objects.filter(match_date=pick.match_date)
         found = None
         for mp in match_qs:
-            # use metadata shortName to try to match
-            if get_team_metadata(mp.home_team).get("shortName", mp.home_team).lower() == pick.home_team.lower() and \
-               get_team_metadata(mp.away_team).get("shortName", mp.away_team).lower() == pick.away_team.lower():
+            if (
+                _team_name_aliases(mp.home_team) & pick_home_aliases
+                and _team_name_aliases(mp.away_team) & pick_away_aliases
+            ):
                 found = mp
                 break
         if not found:

@@ -1,4 +1,4 @@
-<div class="col-md-3">
+<div class="col-lg-2 col-md-3">
       <div class="sidebar-right">
         <div class="d-flex justify-content-between align-items-center mb-2">
           <h5>League Table</h5>
@@ -11,7 +11,7 @@
           </form>
         </div>
         <div class="table-responsive">
-          <table class="table table-sm table-striped table-bordered">
+          <table class="table table-sm table-striped table-bordered" style="font-size: 0.88rem;">
             <thead class="table-light">
               <tr>
                 <th>#</th>
@@ -28,7 +28,7 @@
               <tr>
                 <td>{{ forloop.counter }}</td>
                 <td class="text-nowrap">
-                  <img src="{{ row.team.crest }}" class="team-logo me-1" alt="{{ row.team.shortName }}">
+                  <img src="{{ row.team.crest }}" class="team-logo me-1" alt="{{ row.team.shortName }}" style="width: 20px; height: 20px;">
                   {{ row.team.shortName }}
                 </td>
                 <td>{{ row.points }}</td>

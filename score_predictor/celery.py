@@ -8,44 +8,29 @@ app = Celery("score_predictor")
 app.config_from_object('django.conf:settings', namespace='CELERY')
 app.autodiscover_tasks()
 
-# Consolidated CELERY_BEAT_SCHEDULE
 app.conf.beat_schedule = {
-    'cache-models-every-tuesday': {
-        'task': 'predict.tasks.train_and_cache_models',
-        'schedule': crontab(hour=1, minute=0, day_of_week='tue'),  # 1:00 AM
-    },
-    'predict-weekly-matches': {
-        'task': 'predict.tasks.update_predictions_and_cache',
-        'schedule': crontab(hour=2, minute=0, day_of_week='tue'),  # 2:00 AM
-    },
-    'run-weekly-predictions-every-tuesday': {
-        'task': 'predict.tasks.weekly_predict_and_store_matches',
-        'schedule': crontab(hour=6, minute=0, day_of_week='tue'),  # 6:00 AM
-    },
-    'predict-next-matches-weekly': {
-        'task': 'predict.tasks.predict_next_fixtures',
-        'schedule': crontab(hour=4, minute=0, day_of_week='tue'),  # 4:00 AM
-    },
-    'run-staggered-predictions-every-tuesday': {
+    'run-staggered-predictions-daily': {
         'task': 'predict.tasks.trigger_staggered_scheduling',
-        'schedule': crontab(hour=20, minute=26, day_of_week=4),  # Adjust as needed
+        'schedule': crontab(hour=6, minute=0),
     },
-    'cache-training-data-weekly': {
+    'cache-training-data-daily': {
         'task': 'predict.tasks.cache_training_data',
-        'schedule': crontab(hour=17, minute=27, day_of_week=4),  
+        'schedule': crontab(hour=5, minute=30),
     },
-    
+    'refresh-daily-odds-cache': {
+        'task': 'predict.tasks.refresh_daily_odds_cache',
+        'schedule': crontab(hour=6, minute=20),
+    },
     'refresh-league-standings': {
         'task': 'predict.tasks.refresh_all_league_tables',
-        'schedule': crontab(minute=1,),
+        'schedule': crontab(minute=1),
     },
     "update_metadata_hourly": {
         "task": "predict.tasks.update_metadata_task",
-        "schedule": crontab(minute=0, hour='*'),  # every hour
+        "schedule": crontab(minute=0, hour='*'),
     },
-    
-    "update-match-status-and-results-daily": {
-        "task": "predict.tasks.update_match_status_and_results",
-        "schedule": crontab(hour=3, minute=0),  # runs daily at 03:00 AM
+    "refresh-live-match-data-every-5-minutes": {
+        "task": "predict.tasks.refresh_live_match_data",
+        "schedule": crontab(minute="*/5"),
     },
 }
