@@ -674,7 +674,10 @@ body.dark #content nav .profile-menu li a {
 .admin-dashboard-page .dashboard-table .cell-strong {
 	font-weight: 600;
 	color: var(--dark);
-	overflow-wrap: anywhere;
+	white-space: normal;
+	overflow-wrap: normal;
+	word-break: normal;
+	line-height: 1.45;
 }
 
 .admin-dashboard-page .dashboard-table .cell-code {
@@ -682,6 +685,24 @@ body.dark #content nav .profile-menu li a {
 	font-size: 12px;
 	line-height: 1.5;
 	color: var(--dark);
+	overflow-wrap: anywhere;
+}
+
+.admin-dashboard-page .dashboard-table .task-label {
+	display: block;
+	font-family: var(--poppins);
+	font-size: 13px;
+	font-weight: 600;
+	line-height: 1.35;
+	margin-bottom: 4px;
+	color: var(--dark);
+}
+
+.admin-dashboard-page .dashboard-table .task-path {
+	display: block;
+	font-size: 11px;
+	line-height: 1.45;
+	color: var(--dark-grey);
 	overflow-wrap: anywhere;
 }
 
@@ -700,12 +721,12 @@ body.dark #content nav .profile-menu li a {
 
 .admin-dashboard-page .dashboard-table th:nth-child(1),
 .admin-dashboard-page .dashboard-table td:nth-child(1) {
-	width: 20%;
+	width: 23%;
 }
 
 .admin-dashboard-page .dashboard-table th:nth-child(2),
 .admin-dashboard-page .dashboard-table td:nth-child(2) {
-	width: 28%;
+	width: 25%;
 }
 
 .admin-dashboard-page .dashboard-table th:nth-child(3),
@@ -720,12 +741,12 @@ body.dark #content nav .profile-menu li a {
 
 .admin-dashboard-page .dashboard-table th:nth-child(5),
 .admin-dashboard-page .dashboard-table td:nth-child(5) {
-	width: 12%;
+	width: 11%;
 }
 
 .admin-dashboard-page .dashboard-table th:nth-child(6),
 .admin-dashboard-page .dashboard-table td:nth-child(6) {
-	width: 12%;
+	width: 11%;
 }
 
 .admin-dashboard-page .dashboard-table th:nth-child(7),

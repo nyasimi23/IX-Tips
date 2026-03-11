@@ -42,6 +42,7 @@ from .utils import (
     fetch_training_data_all_seasons,
     find_next_available_match_date,
     find_next_match_date,
+    _team_name_aliases,
     preprocess_match_data,
     process_match_data,
     update_actuals_for_top_picks,
@@ -710,23 +711,37 @@ def top_picks_view(request):
             source = "live"
 
     match_key_to_competition = {}
+    match_key_to_prediction = {}
     if pick_keys:
         candidate_dates = sorted({p.get("match_date") for p in pick_keys if p.get("match_date")})
-        candidate_home_teams = sorted({p.get("home_team") for p in pick_keys if p.get("home_team")})
-        candidate_away_teams = sorted({p.get("away_team") for p in pick_keys if p.get("away_team")})
-        competition_rows = MatchPrediction.objects.filter(
+        prediction_rows = MatchPrediction.objects.filter(
             match_date__in=candidate_dates,
-            home_team__in=candidate_home_teams,
-            away_team__in=candidate_away_teams,
-        ).values("match_date", "home_team", "away_team", "competition")
-        match_key_to_competition = {
-            (row["match_date"], row["home_team"], row["away_team"]): row["competition"]
-            for row in competition_rows
-        }
+        ).select_related("odds")
+        prediction_rows_by_date = defaultdict(list)
+        for prediction_row in prediction_rows:
+            prediction_rows_by_date[prediction_row.match_date].append(prediction_row)
+
+        for pick in pick_keys:
+            competition_code = None
+            matched_prediction = None
+            pick_home_aliases = _team_name_aliases(pick["home_team"])
+            pick_away_aliases = _team_name_aliases(pick["away_team"])
+            for prediction_row in prediction_rows_by_date.get(pick["match_date"], []):
+                if (
+                    _team_name_aliases(prediction_row.home_team) & pick_home_aliases
+                    and _team_name_aliases(prediction_row.away_team) & pick_away_aliases
+                ):
+                    competition_code = prediction_row.competition
+                    matched_prediction = prediction_row
+                    break
+            key = (pick["match_date"], pick["home_team"], pick["away_team"])
+            match_key_to_competition[key] = competition_code
+            match_key_to_prediction[key] = matched_prediction
+
         for competition_code, refresh_date in sorted({
-            (row["competition"], row["match_date"])
-            for row in competition_rows
-            if row.get("competition") and row.get("match_date")
+            (competition_code, pick_date)
+            for (pick_date, _, _), competition_code in match_key_to_competition.items()
+            if competition_code and pick_date
         }):
             refresh_prediction_statuses(competition_code, refresh_date)
 
@@ -752,15 +767,17 @@ def top_picks_view(request):
     for pick in picks:
         raw_home_team = pick.get("home_team")
         raw_away_team = pick.get("away_team")
-        competition_code = match_key_to_competition.get(
-            (pick.get("match_date"), raw_home_team, raw_away_team)
-        )
+        pick_key = (pick.get("match_date"), raw_home_team, raw_away_team)
+        competition_code = match_key_to_competition.get(pick_key)
+        matched_prediction = match_key_to_prediction.get(pick_key)
         competition_name = normalize_display_competition_name(
             competitions.get(competition_code, competition_code),
             code=competition_code,
         )
-        meta_home = get_team_metadata(raw_home_team)
-        meta_away = get_team_metadata(raw_away_team)
+        metadata_home_name = matched_prediction.home_team if matched_prediction else raw_home_team
+        metadata_away_name = matched_prediction.away_team if matched_prediction else raw_away_team
+        meta_home = get_team_metadata(metadata_home_name)
+        meta_away = get_team_metadata(metadata_away_name)
         home_name = normalize_display_team_name(
             meta_home.get("shortName"),
             fallback=raw_home_team,
@@ -772,17 +789,8 @@ def top_picks_view(request):
             max_length=24,
         )
         odds_value = pick.get("odds")
-        if odds_value is None and competition_code:
-            prediction = (
-                MatchPrediction.objects.select_related("odds")
-                .filter(
-                    competition=competition_code,
-                    match_date=pick.get("match_date"),
-                    home_team=raw_home_team,
-                    away_team=raw_away_team,
-                )
-                .first()
-            )
+        if odds_value is None and matched_prediction:
+            prediction = matched_prediction
             if prediction:
                 try:
                     odds_obj = prediction.odds
@@ -816,8 +824,8 @@ def top_picks_view(request):
         enriched_pick["match_time"] = get_cached_kickoff_time(
             competition_code,
             pick.get("match_date"),
-            raw_home_team,
-            raw_away_team,
+            metadata_home_name,
+            metadata_away_name,
         )
         enriched_picks.append(enriched_pick)
 
@@ -848,6 +856,7 @@ def admin_task_dashboard(request):
         task_info.append({
             "name": task.name,
             "task": task.task,
+            "task_label": format_task_label(task.task),
             "enabled": task.enabled,
             "last_run_at": task.last_run_at,
             "interval": task.interval,
@@ -1163,14 +1172,38 @@ def team_initials(name):
 NAME_TO_CODE = {v.lower(): k for k, v in competitions.items()}
 
 
+def format_task_label(task_path):
+    if not task_path:
+        return "Unknown Task"
+    task_name = task_path.rsplit(".", 1)[-1]
+    return re.sub(r"\s+", " ", task_name.replace("_", " ")).strip().title()
+
+
 def predictions_view(request):
-    match_date = request.GET.get('match_date')
-    predictions = MatchPrediction.objects.select_related("odds").all().order_by('match_date')
+    match_date = request.GET.get("match_date")
+    predictions = MatchPrediction.objects.select_related("odds").all().order_by("match_date")
 
     if match_date:
         predictions = predictions.filter(match_date=match_date)
     else:
-        predictions = predictions.exclude(status="FINISHED")
+        today = timezone.localdate()
+        available_dates = list(
+            MatchPrediction.objects.filter(match_date__gte=today)
+            .order_by("match_date")
+            .values_list("match_date", flat=True)
+            .distinct()
+        )
+        selected_default_date = None
+        if today in available_dates:
+            selected_default_date = today
+        elif available_dates:
+            selected_default_date = available_dates[0]
+
+        if selected_default_date:
+            match_date = selected_default_date.isoformat()
+            predictions = predictions.filter(match_date=selected_default_date)
+        else:
+            predictions = predictions.exclude(status="FINISHED")
 
     refresh_pairs = list(predictions.values_list("competition", "match_date").distinct())
     for competition_code, refresh_date in refresh_pairs:
@@ -1436,16 +1469,155 @@ def export_top_picks(request, format):
     elif format == "pdf":
         response = HttpResponse(content_type="application/pdf")
         response["Content-Disposition"] = f'attachment; filename="top_picks_{match_date}.pdf"'
-        from reportlab.pdfgen import canvas
-        p = canvas.Canvas(response)
-        y = 800
-        p.drawString(100, y, f"Top Picks - {match_date}")
-        y -= 30
+        import io
+        from reportlab.lib import colors
+        from reportlab.lib.pagesizes import A4, landscape
+        from reportlab.lib.styles import getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+        def competition_logo_path(competition_code):
+            if not competition_code:
+                return None
+            logo_path = os.path.join(settings.BASE_DIR, "static", "logos", f"{competition_code}.png")
+            return logo_path if os.path.exists(logo_path) else None
+
+        def load_team_logo(logo_source):
+            if not logo_source:
+                return None
+            if logo_source.startswith("/static/"):
+                local_path = os.path.join(settings.BASE_DIR, logo_source.lstrip("/"))
+                if os.path.exists(local_path):
+                    return local_path
+                return None
+            if logo_source.startswith("http://") or logo_source.startswith("https://"):
+                try:
+                    image_response = requests.get(logo_source, timeout=5)
+                    image_response.raise_for_status()
+                    return io.BytesIO(image_response.content)
+                except requests.RequestException:
+                    return None
+            if os.path.exists(logo_source):
+                return logo_source
+            return None
+
+        def logo_cell(source, width=8 * mm, height=8 * mm):
+            resolved = load_team_logo(source)
+            if not resolved:
+                return ""
+            image = Image(resolved, width=width, height=height)
+            image.hAlign = "CENTER"
+            return image
+
+        prediction_rows = MatchPrediction.objects.filter(match_date=match_date).select_related("odds")
+        resolved_predictions = {}
         for pick in picks:
-            p.drawString(100, y, f"{pick.home_team} vs {pick.away_team} - Tip: {pick.tip} - Confidence: {pick.confidence}% - Odds: {getattr(p,'odds','')}")
-            y -= 20
-        p.showPage()
-        p.save()
+            matched_prediction = None
+            pick_home_aliases = _team_name_aliases(pick.home_team)
+            pick_away_aliases = _team_name_aliases(pick.away_team)
+            for prediction_row in prediction_rows:
+                if (
+                    _team_name_aliases(prediction_row.home_team) & pick_home_aliases
+                    and _team_name_aliases(prediction_row.away_team) & pick_away_aliases
+                ):
+                    matched_prediction = prediction_row
+                    break
+            resolved_predictions[(pick.home_team, pick.away_team)] = matched_prediction
+
+        styles = getSampleStyleSheet()
+        title_style = styles["Heading2"]
+        cell_style = styles["BodyText"]
+        cell_style.fontName = "Helvetica"
+        cell_style.fontSize = 9
+        cell_style.leading = 11
+
+        story = [
+            Paragraph(f"Top Picks - {match_date}", title_style),
+            Spacer(1, 6 * mm),
+        ]
+
+        table_data = [[
+            Paragraph("<b>Date</b>", cell_style),
+            Paragraph("<b>Comp</b>", cell_style),
+            "",
+            Paragraph("<b>Home</b>", cell_style),
+            "",
+            Paragraph("<b>Away</b>", cell_style),
+            "",
+            Paragraph("<b>Tip</b>", cell_style),
+            Paragraph("<b>Odds</b>", cell_style),
+        ]]
+
+        for pick in picks:
+            matched_prediction = resolved_predictions.get((pick.home_team, pick.away_team))
+            competition_code = matched_prediction.competition if matched_prediction else None
+            metadata_home_name = matched_prediction.home_team if matched_prediction else pick.home_team
+            metadata_away_name = matched_prediction.away_team if matched_prediction else pick.away_team
+            home_meta = get_team_metadata(metadata_home_name)
+            away_meta = get_team_metadata(metadata_away_name)
+            home_name = normalize_display_team_name(
+                home_meta.get("shortName"),
+                fallback=pick.home_team,
+                max_length=28,
+            )
+            away_name = normalize_display_team_name(
+                away_meta.get("shortName"),
+                fallback=pick.away_team,
+                max_length=28,
+            )
+            kickoff_time = get_cached_kickoff_time(
+                competition_code,
+                match_date,
+                metadata_home_name,
+                metadata_away_name,
+            )
+            date_text = match_date.strftime("%Y-%m-%d")
+            if kickoff_time:
+                date_text = f"{date_text}<br/>{kickoff_time}"
+
+            table_data.append([
+                Paragraph(date_text, cell_style),
+                logo_cell(competition_logo_path(competition_code)),
+                Paragraph(normalize_display_competition_name(competitions.get(competition_code, competition_code), code=competition_code), cell_style),
+                logo_cell(home_meta.get("crest")),
+                Paragraph(home_name, cell_style),
+                logo_cell(away_meta.get("crest")),
+                Paragraph(away_name, cell_style),
+                Paragraph(f"<b>{pick.tip}</b>", cell_style),
+                Paragraph("-" if pick.odds is None else f"{pick.odds:.2f}", cell_style),
+            ])
+
+        table = Table(
+            table_data,
+            colWidths=[28 * mm, 12 * mm, 18 * mm, 12 * mm, 36 * mm, 12 * mm, 36 * mm, 24 * mm, 20 * mm],
+            repeatRows=1,
+        )
+        table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#EAF0FF")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#1E3A8A")),
+            ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#D6DCE8")),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("ALIGN", (1, 0), (1, -1), "CENTER"),
+            ("ALIGN", (3, 0), (3, -1), "CENTER"),
+            ("ALIGN", (5, 0), (5, -1), "CENTER"),
+            ("ALIGN", (7, 0), (7, -1), "CENTER"),
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#F8FAFC")]),
+            ("LEFTPADDING", (0, 0), (-1, -1), 6),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 6),
+            ("TOPPADDING", (0, 0), (-1, -1), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ]))
+        story.append(table)
+
+        doc = SimpleDocTemplate(
+            response,
+            pagesize=landscape(A4),
+            leftMargin=12 * mm,
+            rightMargin=12 * mm,
+            topMargin=12 * mm,
+            bottomMargin=12 * mm,
+        )
+        doc.build(story)
         return response
 
     else:

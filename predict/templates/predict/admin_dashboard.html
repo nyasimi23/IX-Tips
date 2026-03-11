@@ -48,7 +48,10 @@
         {% for task in tasks %}
         <tr>
           <td data-label="Name" class="cell-strong">{{ task.name }}</td>
-          <td data-label="Task" class="cell-code">{{ task.task }}</td>
+          <td data-label="Task" class="cell-code">
+            <span class="task-label">{{ task.task_label }}</span>
+            <span class="task-path">{{ task.task }}</span>
+          </td>
           <td data-label="Enabled">
             {% if task.enabled %}
             <span class="status completed">Enabled</span>
