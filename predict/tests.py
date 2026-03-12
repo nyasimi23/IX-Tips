@@ -1,4 +1,5 @@
 from unittest import TestCase
+from types import SimpleNamespace
 
 import pandas as pd
 
@@ -7,7 +8,7 @@ from predict.views import (
     normalize_display_team_name,
     team_initials,
 )
-from predict.utils import build_fixture_features, build_training_features
+from predict.utils import build_fixture_features, build_training_features, score_top_pick_markets
 
 
 class PredictionFeatureEngineeringTests(TestCase):
@@ -78,6 +79,29 @@ class PredictionFeatureEngineeringTests(TestCase):
         self.assertIn("elo_gap", X.columns)
         self.assertIn("elo_home_win_prob", X.columns)
         self.assertEqual(list(X.columns), context["feature_columns"])
+
+    def test_top_pick_market_scoring_supports_win_and_under_markets(self):
+        history = pd.DataFrame(
+            [
+                {"home_team": "Alpha", "away_team": "Beta", "home_goals": 1, "away_goals": 0, "utc_date": "2025-01-01"},
+                {"home_team": "Alpha", "away_team": "Gamma", "home_goals": 2, "away_goals": 0, "utc_date": "2025-01-08"},
+                {"home_team": "Delta", "away_team": "Beta", "home_goals": 1, "away_goals": 0, "utc_date": "2025-01-15"},
+                {"home_team": "Epsilon", "away_team": "Beta", "home_goals": 1, "away_goals": 0, "utc_date": "2025-01-22"},
+            ]
+        )
+
+        _, _, _, context = build_training_features(history, lookback=4)
+        match_prediction = SimpleNamespace(
+            home_team="Alpha",
+            away_team="Beta",
+            predicted_home_goals=1,
+            predicted_away_goals=0,
+        )
+
+        ranked_markets, _ = score_top_pick_markets(match_prediction, context)
+
+        self.assertEqual(ranked_markets[0][0], "1")
+        self.assertIn("Under 2.5", {market for market, _ in ranked_markets[:3]})
 
 
 class TeamDisplayFormattingTests(TestCase):

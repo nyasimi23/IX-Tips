@@ -19,6 +19,7 @@ from django.core.cache import cache
 from django.templatetags.static import static
 from django.contrib.auth.decorators import login_required
 from django.template.loader import render_to_string
+from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 from django.utils import timezone
 
@@ -29,12 +30,15 @@ from .models import MatchOdds, MatchPrediction, TopPick
 from .forms import ActualResultForm, PredictionForm, LivePredictionForm
 from .constants import API_TOKEN, COMPETITIONS, ODDS_API_KEY as SETTINGS_ODDS_API_KEY
 from .utils import (
+    explain_pick_reasons,
     fetch_matches_by_date,
     get_top_predictions as utils_get_top_predictions,
     get_or_train_model_bundle,
+    market_edge,
     predict_match_outcome,
     preprocess_api_data,
     #store_top_pick_for_date,
+    score_top_pick_markets,
     train_models,
     get_league_table,
     fetch_training_data,
@@ -336,19 +340,22 @@ def resolve_prediction_odds(prediction):
         return None
 
 
-def update_odds_in_db(competition_code):
-    """Fetch odds for a competition and update DB cache"""
+def update_odds_in_db(competition_code, match_dates=None):
+    """Fetch odds for a competition and update DB cache."""
     sport_key = COMPETITION_SPORT_MAP.get(competition_code)
     if not sport_key:
         return 0
 
     odds_data = fetch_odds(sport_key)
     saved_count = 0
+    prediction_filters = {"competition": competition_code}
+    if match_dates:
+        prediction_filters["match_date__in"] = list(match_dates)
+    else:
+        prediction_filters["match_date__gte"] = date.today() - timedelta(days=1)
+
     candidate_predictions = list(
-        MatchPrediction.objects.filter(
-            competition=competition_code,
-            match_date__gte=date.today() - timedelta(days=1),
-        ).order_by("match_date", "id")
+        MatchPrediction.objects.filter(**prediction_filters).order_by("match_date", "id")
     )
     prediction_map = {
         (normalize_team_lookup_key(p.home_team), normalize_team_lookup_key(p.away_team)): p
@@ -372,13 +379,13 @@ def update_odds_in_db(competition_code):
     return saved_count
 
 
-def refresh_competition_odds(competition_code, force=False):
+def refresh_competition_odds(competition_code, force=False, match_dates=None):
     if not competition_code:
         return 0
     refresh_key = competition_odds_refresh_cache_key(competition_code)
     if not force and cache.get(refresh_key):
         return 0
-    updated = update_odds_in_db(competition_code)
+    updated = update_odds_in_db(competition_code, match_dates=match_dates)
     cache.set(refresh_key, True, timeout=300)
     return updated
 
@@ -430,78 +437,8 @@ def fetch_odds_for_match(match, competition_code="EPL"):
     return None
 
     
-def get_top_predictions(limit=10):
-    today = date.today()
-    matches = MatchPrediction.objects.filter(
-        match_date__gte=today
-    ).select_related("odds")  # ✅ preload odds to avoid extra queries
-
-    picks_by_date = {}
-    tip_priority = {"Over 2.5": 3, "GG": 2, "1": 1, "2": 1, "X": 0}
-
-    for m in matches:
-        tips = []
-        margin = m.predicted_home_goals - m.predicted_away_goals
-        total_goals = m.predicted_home_goals + m.predicted_away_goals
-
-        # --- Model-based tips ---
-        if abs(margin) >= 1.5:
-            tips.append(("1" if margin > 0 else "2", min(abs(margin) * 10, 40)))
-        elif abs(margin) <= 0.4:
-            tips.append(("X", 20))
-
-        if m.predicted_home_goals >= 1 and m.predicted_away_goals >= 1:
-            tips.append(("GG", 25))
-
-        if total_goals > 2.5:
-            tips.append(("Over 2.5", min((total_goals - 2.5) * 12, 30)))
-
-        if not tips:
-            continue
-
-        # ✅ Force Over 2.5 if total goals ≥ 3
-        if total_goals >= 3:
-            best_tip = ("Over 2.5", 100)
-        else:
-            best_tip = sorted(
-                tips, key=lambda x: (x[1], tip_priority.get(x[0], 0)), reverse=True
-            )[0]
-
-        # --- Get odds directly from related object ---
-        odds_obj = getattr(m, "odds", None)
-        odds_value = None
-        if odds_obj:
-            if best_tip[0] == "1":
-                odds_value = odds_obj.home_win
-            elif best_tip[0] == "2":
-                odds_value = odds_obj.away_win
-            elif best_tip[0] == "X":
-                odds_value = odds_obj.draw
-            elif best_tip[0] == "Over 2.5":
-                odds_value = odds_obj.over_2_5
-            elif best_tip[0] == "GG":
-                odds_value = odds_obj.btts_yes
-
-        date_str = m.match_date.strftime("%Y-%m-%d")
-        pick = {
-            "home_team": m.home_team,
-            "away_team": m.away_team,
-            "tip": best_tip[0],
-            "confidence": int(best_tip[1]),
-            "odds": odds_value,
-            "match_date": date_str,
-        }
-        picks_by_date.setdefault(date_str, []).append(pick)
-
-    # --- Sort and limit ---
-    for date_str in picks_by_date:
-        picks_by_date[date_str] = sorted(
-            picks_by_date[date_str],
-            key=lambda x: int(x["confidence"]),
-            reverse=True,
-        )[:limit]
-
-    return picks_by_date
+def get_top_predictions(limit=10, variant=1):
+    return utils_get_top_predictions(limit=limit, variant=variant)
 # -------------------------
 # Helper: fetch actual results (existing)
 # -------------------------
@@ -668,6 +605,8 @@ def top_picks_view(request):
     label_filter = request.GET.get("filter")
     match_date_str = request.GET.get("match_date")
     show_past = request.GET.get("past") == "1"
+    variant = request.GET.get("variant", "1")
+    variant = variant if variant in {"1", "2", "3"} else "1"
 
     today = date.today()
 
@@ -677,38 +616,67 @@ def top_picks_view(request):
         except ValueError:
             match_date = today
     else:
-        upcoming_dates = TopPick.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
+        if variant == "1":
+            upcoming_dates = TopPick.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
+        elif variant == "2":
+            upcoming_dates = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
+        else:
+            upcoming_dates = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
         match_date = upcoming_dates.first() if upcoming_dates.exists() else today
 
     # Fetch from DB
     if show_past:
         picks_qs = TopPick.objects.filter(match_date__lt=today).order_by("-match_date")
+        live_variant_picks = None
+    elif variant == "2":
+        predictions_by_date = get_top_predictions(limit=10, variant=2)
+        live_variant_picks = predictions_by_date.get(match_date.strftime("%Y-%m-%d"), [])
+        picks_qs = TopPick.objects.none()
+    elif variant == "3":
+        predictions_by_date = get_top_predictions(limit=10, variant=1)
+        live_variant_picks = []
+        for date_key, day_picks in predictions_by_date.items():
+            for pick in day_picks:
+                live_variant_picks.append({
+                    **pick,
+                    "match_date": date.fromisoformat(date_key),
+                })
+        live_variant_picks = sorted(
+            live_variant_picks,
+            key=lambda item: float(item.get("confidence", 0)),
+            reverse=True,
+        )[:10]
+        picks_qs = TopPick.objects.none()
     else:
         picks_qs = TopPick.objects.filter(match_date=match_date)
+        live_variant_picks = None
 
-    pick_keys = list(
-        picks_qs.values(
-            "home_team",
-            "away_team",
-            "match_date",
-        )
-    )
-    source = "cached"
-
-    # If no picks stored, fallback to compute and store live picks
-    if not pick_keys and not show_past:
-        predictions_by_date = get_top_predictions(limit=10)
-        if match_date.strftime("%Y-%m-%d") in predictions_by_date:
-            store_top_pick_for_date(predictions_by_date)
-            picks_qs = TopPick.objects.filter(match_date=match_date)
-            pick_keys = list(
-                picks_qs.values(
-                    "home_team",
-                    "away_team",
-                    "match_date",
-                )
+    if live_variant_picks is not None:
+        pick_keys = [
+            {"home_team": p["home_team"], "away_team": p["away_team"], "match_date": p.get("match_date", match_date)}
+            for p in live_variant_picks
+        ]
+        source = "live"
+    else:
+        pick_keys = list(
+            picks_qs.values(
+                "home_team",
+                "away_team",
+                "match_date",
             )
-            source = "live"
+        )
+        source = "cached"
+    prediction_count_for_date = 0
+    if not show_past and match_date:
+        prediction_count_for_date = MatchPrediction.objects.filter(match_date=match_date).count()
+    can_generate_top_picks = (
+        variant == "1"
+        and
+        not show_past
+        and match_date >= today
+        and prediction_count_for_date > 0
+        and not pick_keys
+    )
 
     match_key_to_competition = {}
     match_key_to_prediction = {}
@@ -747,23 +715,39 @@ def top_picks_view(request):
 
     update_actuals_for_top_picks(picks_qs)
 
-    picks = list(
-        picks_qs.values(
-            "home_team",
-            "away_team",
-            "tip",
-            "actual_tip",
-            "is_correct",
-            "confidence",
-            "odds",
-            "match_date",
+    if live_variant_picks is not None:
+        picks = [
+            {
+                "home_team": p["home_team"],
+                "away_team": p["away_team"],
+                "tip": p["tip"],
+                "actual_tip": None,
+                "is_correct": None,
+                "confidence": p["confidence"],
+                "odds": p["odds"],
+                "match_date": p.get("match_date", match_date),
+            }
+            for p in live_variant_picks
+        ]
+    else:
+        picks = list(
+            picks_qs.values(
+                "home_team",
+                "away_team",
+                "tip",
+                "actual_tip",
+                "is_correct",
+                "confidence",
+                "odds",
+                "match_date",
+            )
         )
-    )
 
     if label_filter:
         picks = [p for p in picks if p.get("tip") == label_filter]
 
     enriched_picks = []
+    top_pick_model_bundles = {}
     for pick in picks:
         raw_home_team = pick.get("home_team")
         raw_away_team = pick.get("away_team")
@@ -805,8 +789,12 @@ def top_picks_view(request):
                         odds_value = odds_obj.draw
                     elif pick.get("tip") == "Over 2.5":
                         odds_value = odds_obj.over_2_5
+                    elif pick.get("tip") == "Under 2.5":
+                        odds_value = odds_obj.under_2_5
                     elif pick.get("tip") == "GG":
                         odds_value = odds_obj.btts_yes
+                    elif pick.get("tip") == "NG":
+                        odds_value = odds_obj.btts_no
         enriched_pick = dict(pick)
         enriched_pick["home_team"] = home_name
         enriched_pick["away_team"] = away_name
@@ -821,6 +809,23 @@ def top_picks_view(request):
             static(f"logos/{competition_code}.png") if competition_code in competitions else None
         )
         enriched_pick["odds"] = odds_value
+        enriched_pick["implied_probability"] = None
+        enriched_pick["edge"] = None
+        enriched_pick["reasons"] = []
+        if matched_prediction and competition_code:
+            if competition_code not in top_pick_model_bundles:
+                top_pick_model_bundles[competition_code] = get_or_train_model_bundle(competition_code)
+            bundle = top_pick_model_bundles.get(competition_code)
+            model_context = bundle[2] if bundle and len(bundle) == 3 else {}
+            _, feature_snapshot = score_top_pick_markets(matched_prediction, model_context)
+            implied_probability, edge = market_edge(pick.get("confidence"), odds_value)
+            enriched_pick["implied_probability"] = implied_probability
+            enriched_pick["edge"] = edge
+            enriched_pick["reasons"] = explain_pick_reasons(
+                pick.get("tip"),
+                feature_snapshot,
+                matched_prediction,
+            )
         enriched_pick["match_time"] = get_cached_kickoff_time(
             competition_code,
             pick.get("match_date"),
@@ -840,7 +845,40 @@ def top_picks_view(request):
         "source": source,
         "selected_date": match_date,
         "show_past": show_past,
+        "prediction_count_for_date": prediction_count_for_date,
+        "can_generate_top_picks": can_generate_top_picks,
+        "variant": variant,
+        "header_label": "All Upcoming Dates" if variant == "3" else match_date.strftime("%B %d, %Y"),
     })
+
+
+@require_POST
+def regenerate_top_picks(request):
+    match_date_str = request.POST.get("match_date")
+
+    if match_date_str:
+        try:
+            match_date = date.fromisoformat(match_date_str)
+        except ValueError:
+            match_date = timezone.localdate()
+    else:
+        match_date = timezone.localdate()
+
+    target_date = match_date.isoformat()
+    if match_date < timezone.localdate():
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+
+    existing_top_picks = TopPick.objects.filter(match_date=match_date).exists()
+    prediction_count = MatchPrediction.objects.filter(match_date=match_date).count()
+    if existing_top_picks or prediction_count == 0:
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+
+    predictions_by_date = get_top_predictions(limit=10)
+    if target_date in predictions_by_date:
+        TopPick.objects.filter(match_date=match_date).delete()
+        store_top_pick_for_date({target_date: predictions_by_date[target_date]})
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+    return redirect(f"{reverse('top_picks')}?match_date={target_date}")
 
 
 # -------------------------
@@ -879,7 +917,8 @@ def admin_task_dashboard(request):
     return render(request, "predict/admin_dashboard.html", {
         "tasks": task_info,
         "cache_info": cache_info,
-        "competitions": COMPETITIONS
+        "competitions": COMPETITIONS,
+        "today": timezone.localdate(),
     })
 
 
@@ -1446,16 +1485,58 @@ def refresh_top_picks(request):
 
 def export_top_picks(request, format):
     match_date_str = request.GET.get("match_date")
+    variant = request.GET.get("variant", "1")
+    variant = variant if variant in {"1", "2", "3"} else "1"
 
-    try:
+    if variant == "3" and not match_date_str:
+        match_date = timezone.localdate()
+    else:
         try:
-            match_date = datetime.strptime(match_date_str, "%Y-%m-%d").date()
-        except ValueError:
-            match_date = datetime.strptime(match_date_str, "%B %d, %Y").date()
-    except Exception as e:
-        return HttpResponseBadRequest(f"Invalid date format: {e}")
+            try:
+                match_date = datetime.strptime(match_date_str, "%Y-%m-%d").date()
+            except ValueError:
+                match_date = datetime.strptime(match_date_str, "%B %d, %Y").date()
+        except Exception as e:
+            return HttpResponseBadRequest(f"Invalid date format: {e}")
 
-    picks = TopPick.objects.filter(match_date=match_date)
+    if variant == "3":
+        from types import SimpleNamespace
+
+        picks = []
+        for date_key, day_picks in get_top_predictions(limit=10, variant=1).items():
+            for pick in day_picks:
+                picks.append(
+                    SimpleNamespace(
+                        match_date=date.fromisoformat(date_key),
+                        home_team=pick["home_team"],
+                        away_team=pick["away_team"],
+                        tip=pick["tip"],
+                        confidence=float(pick["confidence"]),
+                        odds=pick.get("odds"),
+                        actual_tip=None,
+                        is_correct=None,
+                    )
+                )
+        picks = sorted(picks, key=lambda item: item.confidence, reverse=True)[:10]
+    elif variant == "2":
+        from types import SimpleNamespace
+
+        live_picks = get_top_predictions(limit=10, variant=2).get(match_date.strftime("%Y-%m-%d"), [])
+        picks = [
+            SimpleNamespace(
+                match_date=match_date,
+                home_team=pick["home_team"],
+                away_team=pick["away_team"],
+                tip=pick["tip"],
+                confidence=float(pick["confidence"]),
+                odds=pick.get("odds"),
+                actual_tip=None,
+                is_correct=None,
+            )
+            for pick in live_picks
+        ]
+    else:
+        picks = list(TopPick.objects.filter(match_date=match_date))
 
     if format == "csv":
         response = HttpResponse(content_type="text/csv")
@@ -1509,20 +1590,26 @@ def export_top_picks(request, format):
             image.hAlign = "CENTER"
             return image
 
-        prediction_rows = MatchPrediction.objects.filter(match_date=match_date).select_related("odds")
+        prediction_rows = MatchPrediction.objects.filter(
+            match_date__in=sorted({pick.match_date for pick in picks})
+        ).select_related("odds")
+        prediction_rows_by_date = defaultdict(list)
+        for prediction_row in prediction_rows:
+            prediction_rows_by_date[prediction_row.match_date].append(prediction_row)
+
         resolved_predictions = {}
         for pick in picks:
             matched_prediction = None
             pick_home_aliases = _team_name_aliases(pick.home_team)
             pick_away_aliases = _team_name_aliases(pick.away_team)
-            for prediction_row in prediction_rows:
+            for prediction_row in prediction_rows_by_date.get(pick.match_date, []):
                 if (
                     _team_name_aliases(prediction_row.home_team) & pick_home_aliases
                     and _team_name_aliases(prediction_row.away_team) & pick_away_aliases
                 ):
                     matched_prediction = prediction_row
                     break
-            resolved_predictions[(pick.home_team, pick.away_team)] = matched_prediction
+            resolved_predictions[(pick.match_date, pick.home_team, pick.away_team)] = matched_prediction
 
         styles = getSampleStyleSheet()
         title_style = styles["Heading2"]
@@ -1549,7 +1636,7 @@ def export_top_picks(request, format):
         ]]
 
         for pick in picks:
-            matched_prediction = resolved_predictions.get((pick.home_team, pick.away_team))
+            matched_prediction = resolved_predictions.get((pick.match_date, pick.home_team, pick.away_team))
             competition_code = matched_prediction.competition if matched_prediction else None
             metadata_home_name = matched_prediction.home_team if matched_prediction else pick.home_team
             metadata_away_name = matched_prediction.away_team if matched_prediction else pick.away_team
@@ -1567,11 +1654,11 @@ def export_top_picks(request, format):
             )
             kickoff_time = get_cached_kickoff_time(
                 competition_code,
-                match_date,
+                pick.match_date,
                 metadata_home_name,
                 metadata_away_name,
             )
-            date_text = match_date.strftime("%Y-%m-%d")
+            date_text = pick.match_date.strftime("%Y-%m-%d")
             if kickoff_time:
                 date_text = f"{date_text}<br/>{kickoff_time}"
 

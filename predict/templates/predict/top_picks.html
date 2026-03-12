@@ -105,6 +105,35 @@
         .top-picks-table td {
             padding: 0.75rem 0.7rem;
         }
+        .reason-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.35rem;
+            margin-top: 0.45rem;
+        }
+        .reason-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 0.18rem 0.45rem;
+            border-radius: 9999px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            color: #475569;
+            font-size: 0.63rem;
+            line-height: 1.2;
+            white-space: nowrap;
+        }
+        .metric-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.2rem;
+        }
+        .metric-subtle {
+            font-size: 0.66rem;
+            color: #64748b;
+            white-space: nowrap;
+        }
         @media (max-width: 768px) {
             .team-cell {
                 min-width: 190px;
@@ -144,6 +173,9 @@
             .top-picks-table td {
                 padding: 0.6rem 0.45rem;
             }
+            .reason-chip {
+                white-space: normal;
+            }
         }
     </style>
 </head>
@@ -159,7 +191,7 @@
     </a>
 
     <h4 class="text-3xl font-extrabold text-gray-800 mb-4 sm:mb-0 text-center">
-      <span class="text-red-500">🔥</span> Top Picks for {{ selected_date|date:"F j, Y" }}
+      <span class="text-red-500">🔥</span> Top Picks for {{ header_label }}
     </h4>
 
     <div class="text-sm text-gray-600 px-3 py-1 bg-white rounded-full shadow-sm border border-gray-200">
@@ -168,11 +200,23 @@
   </div>
 
   <!-- Filter Controls -->
+  <div class="flex justify-center gap-2 mb-4">
+    <a href="?match_date={{ selected_date|date:'Y-m-d' }}&variant=1{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}{% if show_past %}&past=1{% endif %}" class="px-4 py-2 text-sm font-medium rounded-full {% if variant == '1' %}bg-blue-600 text-white{% else %}bg-white border border-gray-300 text-gray-700{% endif %} shadow-sm hover:bg-blue-50">
+      Sure 1
+    </a>
+    <a href="?match_date={{ selected_date|date:'Y-m-d' }}&variant=2{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}" class="px-4 py-2 text-sm font-medium rounded-full {% if variant == '2' %}bg-slate-800 text-white{% else %}bg-white border border-gray-300 text-gray-700{% endif %} shadow-sm hover:bg-slate-50">
+      Sure 2
+    </a>
+    <a href="?variant=3{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}" class="px-4 py-2 text-sm font-medium rounded-full {% if variant == '3' %}bg-emerald-600 text-white{% else %}bg-white border border-gray-300 text-gray-700{% endif %} shadow-sm hover:bg-emerald-50">
+      Running Bet
+    </a>
+  </div>
   <div class="flex flex-col sm:flex-row justify-center items-center gap-4 mb-8">
     <form id="filter-form" method="get" class="flex flex-wrap items-center justify-center gap-2 w-full sm:w-auto">
       <input type="text" id="date-picker" name="match_date" placeholder="Select Date"
              class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm"
-             value="{{ selected_date|date:'Y-m-d' }}" readonly>
+             value="{{ selected_date|date:'Y-m-d' }}" readonly {% if variant == '3' %}disabled{% endif %}>
+      <input type="hidden" name="variant" value="{{ variant }}">
       
       <select name="filter" 
               class="p-2 border border-gray-300 rounded-md shadow-sm focus:ring-blue-500 focus:border-blue-500 text-sm bg-white"
@@ -182,11 +226,13 @@
         <option value="2" {% if filter_label == "2" %}selected{% endif %}>Away Win (2)</option>
         <option value="X" {% if filter_label == "X" %}selected{% endif %}>Draw (X)</option>
         <option value="GG" {% if filter_label == "GG" %}selected{% endif %}>Both Teams to Score (GG)</option>
+        <option value="NG" {% if filter_label == "NG" %}selected{% endif %}>Both Teams Not to Score (NG)</option>
         <option value="Over 2.5" {% if filter_label == "Over 2.5" %}selected{% endif %}>Over 2.5 Goals</option>
+        <option value="Under 2.5" {% if filter_label == "Under 2.5" %}selected{% endif %}>Under 2.5 Goals</option>
       </select>
     </form>
 
-    <a href="?past=1" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 bg-white border border-gray-400 text-gray-700 hover:bg-gray-50 shadow-sm">
+    <a href="?past=1{% if variant %}&variant={{ variant }}{% endif %}" class="px-5 py-2 text-sm font-medium rounded-full transition-all duration-200 ease-in-out transform hover:scale-105 bg-white border border-gray-400 text-gray-700 hover:bg-gray-50 shadow-sm">
       View Past Tips
     </a>
     
@@ -196,10 +242,10 @@
     </a>
   </div>
   <div class="flex justify-center gap-3 mb-6">
-    <a href="{% url 'export_top_picks' format='csv' %}?match_date={{ selected_date }}" class="px-4 py-2 text-sm font-medium rounded-full bg-white border border-gray-300 text-gray-700 shadow-sm hover:bg-gray-50">
+    <a href="{% url 'export_top_picks' format='csv' %}?match_date={{ selected_date }}&variant={{ variant }}" class="px-4 py-2 text-sm font-medium rounded-full bg-white border border-gray-300 text-gray-700 shadow-sm hover:bg-gray-50">
       Export CSV
     </a>
-    <a href="{% url 'export_top_picks' format='pdf' %}?match_date={{ selected_date }}" class="px-4 py-2 text-sm font-medium rounded-full bg-white border border-gray-300 text-gray-700 shadow-sm hover:bg-gray-50">
+    <a href="{% url 'export_top_picks' format='pdf' %}?match_date={{ selected_date }}&variant={{ variant }}" class="px-4 py-2 text-sm font-medium rounded-full bg-white border border-gray-300 text-gray-700 shadow-sm hover:bg-gray-50">
       Export PDF
     </a>
   </div>
@@ -254,6 +300,13 @@
                     <span class="team-name">{{ p.away_team }}</span>
                   </div>
                 </div>
+                {% if p.reasons %}
+                <div class="reason-list">
+                  {% for reason in p.reasons %}
+                  <span class="reason-chip">{{ reason }}</span>
+                  {% endfor %}
+                </div>
+                {% endif %}
               </td>
               <td class="text-center">
                 <span class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full font-semibold whitespace-nowrap text-[0.74rem] {% if not p.actual_tip %}bg-blue-100 text-blue-700{% elif p.is_correct %}bg-green-100 text-green-700{% else %}bg-red-100 text-red-700{% endif %}">
@@ -262,13 +315,20 @@
               </td>
               <td class="text-center font-semibold whitespace-nowrap">{{ p.confidence|floatformat:1 }}%</td>
               <td class="text-center">
-                {% if p.odds %}
-                <span class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold whitespace-nowrap text-[0.74rem]">
-                  {{ p.odds|floatformat:2 }}
-                </span>
-                {% else %}
-                <span class="text-gray-400">-</span>
-                {% endif %}
+                <div class="metric-stack">
+                  {% if p.odds %}
+                  <span class="inline-flex items-center justify-center px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-semibold whitespace-nowrap text-[0.74rem]">
+                    {{ p.odds|floatformat:2 }}
+                  </span>
+                  {% else %}
+                  <span class="text-gray-400">-</span>
+                  {% endif %}
+                  {% if p.edge %}
+                  <span class="metric-subtle">Edge {{ p.edge|floatformat:1 }}%</span>
+                  {% elif p.implied_probability %}
+                  <span class="metric-subtle">Imp {{ p.implied_probability|floatformat:1 }}%</span>
+                  {% endif %}
+                </div>
               </td>
             </tr>
             {% endfor %}
@@ -282,7 +342,7 @@
         </div>
         <div class="flex items-center gap-2">
           {% if page_obj.has_previous %}
-          <a href="?match_date={{ selected_date|date:'Y-m-d' }}{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}{% if show_past %}&past=1{% endif %}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded-full bg-white border border-gray-300 text-gray-700 hover:bg-gray-100">
+          <a href="?match_date={{ selected_date|date:'Y-m-d' }}&variant={{ variant }}{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}{% if show_past %}&past=1{% endif %}&page={{ page_obj.previous_page_number }}" class="px-3 py-1 rounded-full bg-white border border-gray-300 text-gray-700 hover:bg-gray-100">
             Prev
           </a>
           {% endif %}
@@ -290,7 +350,7 @@
             {{ page_obj.number }}
           </span>
           {% if page_obj.has_next %}
-          <a href="?match_date={{ selected_date|date:'Y-m-d' }}{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}{% if show_past %}&past=1{% endif %}&page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded-full bg-white border border-gray-300 text-gray-700 hover:bg-gray-100">
+          <a href="?match_date={{ selected_date|date:'Y-m-d' }}&variant={{ variant }}{% if filter_label %}&filter={{ filter_label|urlencode }}{% endif %}{% if show_past %}&past=1{% endif %}&page={{ page_obj.next_page_number }}" class="px-3 py-1 rounded-full bg-white border border-gray-300 text-gray-700 hover:bg-gray-100">
             Next
           </a>
           {% endif %}
@@ -299,7 +359,26 @@
       {% endif %}
     {% else %}
       <div class="p-8 text-center text-gray-500 text-lg">
+        {% if not show_past and prediction_count_for_date %}
+        Predictions exist for {{ selected_date|date:"F j, Y" }}, but top picks have not been generated yet.
+        {% if can_generate_top_picks %}
+        <div class="mt-4">
+          <form method="post" action="{% url 'regenerate_top_picks' %}">
+            {% csrf_token %}
+            <input type="hidden" name="match_date" value="{{ selected_date|date:'Y-m-d' }}">
+            <button type="submit" class="px-4 py-2 text-sm font-medium rounded-full bg-blue-600 text-white shadow-sm hover:bg-blue-700">
+              Generate Top Picks
+            </button>
+          </form>
+        </div>
+        {% else %}
+        <div class="mt-2 text-sm text-gray-400">
+          Top picks cannot be generated for this date from this page.
+        </div>
+        {% endif %}
+        {% else %}
         No top picks found. Please check back later!
+        {% endif %}
       </div>
     {% endif %}
   </div>
