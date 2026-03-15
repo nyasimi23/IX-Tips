@@ -4,7 +4,7 @@ from celery import shared_task
 from django.core.cache import cache
 
 from .constants import API_TOKEN, COMPETITIONS, TRAINING_CACHE_TIMEOUT
-from .models import MatchPrediction
+from .models import MatchPrediction, TopPick
 from .utils import (
     fetch_and_cache_team_metadata,
     fetch_matches_by_date,
@@ -13,7 +13,7 @@ from .utils import (
     find_upcoming_match_dates,
     get_league_table,
     get_or_train_model_bundle,
-    get_top_predictions,
+    get_top_predictions_for_variant,
     save_predictions,
     store_top_pick_for_date
 )
@@ -117,16 +117,23 @@ def update_metadata_task():
 
 @shared_task
 def store_daily_top_pick():
-    predictions = get_top_predictions(limit=10)
-    store_top_pick_for_date(predictions)
+    stored = {}
+    for variant in ("1", "2", "3"):
+        TopPick.objects.filter(variant=variant, match_date__gte=date.today()).delete()
+        predictions = get_top_predictions_for_variant(limit=10, variant=variant)
+        stored[variant] = store_top_pick_for_date(predictions, variant=variant)
+    return stored
 
 @shared_task
 def refresh_daily_odds_cache():
     from .views import update_all_odds
 
     updated = update_all_odds()
-    top_predictions = get_top_predictions(limit=10)
-    stored_top_picks = store_top_pick_for_date(top_predictions)
+    stored_top_picks = {}
+    for variant in ("1", "2", "3"):
+        TopPick.objects.filter(variant=variant, match_date__gte=date.today()).delete()
+        top_predictions = get_top_predictions_for_variant(limit=10, variant=variant)
+        stored_top_picks[variant] = store_top_pick_for_date(top_predictions, variant=variant)
     return {
         "odds_updates": updated,
         "stored_top_picks": stored_top_picks,
@@ -155,8 +162,11 @@ def refresh_live_match_data():
             continue
         status_updates += refresh_prediction_statuses(competition, match_date, force=True)
 
-    top_predictions = get_top_predictions(limit=10)
-    stored_top_picks = store_top_pick_for_date(top_predictions)
+    stored_top_picks = {}
+    for variant in ("1", "2", "3"):
+        TopPick.objects.filter(variant=variant, match_date__gte=today).delete()
+        top_predictions = get_top_predictions_for_variant(limit=10, variant=variant)
+        stored_top_picks[variant] = store_top_pick_for_date(top_predictions, variant=variant)
 
     return {
         "status_updates": status_updates,

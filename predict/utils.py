@@ -1615,8 +1615,50 @@ def get_top_predictions(limit=10, variant=1):
     return picks_by_date
 
 
+def get_running_bet_predictions(limit=10):
+    base_predictions = get_top_predictions(limit=limit, variant=1)
+    aggregated_candidates = []
 
-def store_top_pick_for_date(predictions_by_date):
+    for date_str, picks in base_predictions.items():
+        for pick in picks:
+            aggregated_candidates.append({
+                "home_team": pick["home_team"],
+                "away_team": pick["away_team"],
+                "tip": pick["tip"],
+                "confidence": pick["confidence"],
+                "confidence_value": float(pick.get("confidence") or 0),
+                "match_date": pick["match_date"],
+                "odds": pick.get("odds"),
+            })
+
+    aggregated_candidates.sort(
+        key=lambda item: (item["confidence_value"], item["match_date"]),
+        reverse=True,
+    )
+    selected = aggregated_candidates[:limit]
+
+    grouped = defaultdict(list)
+    for pick in selected:
+        grouped[pick["match_date"]].append({
+            "home_team": pick["home_team"],
+            "away_team": pick["away_team"],
+            "tip": pick["tip"],
+            "confidence": pick["confidence"],
+            "match_date": pick["match_date"],
+            "odds": pick.get("odds"),
+        })
+
+    return dict(grouped)
+
+
+def get_top_predictions_for_variant(limit=10, variant="1"):
+    variant = str(variant)
+    if variant == "3":
+        return get_running_bet_predictions(limit=limit)
+    return get_top_predictions(limit=limit, variant=int(variant))
+
+
+def store_top_pick_for_date(predictions_by_date, variant="1"):
     if TopPick is None:
         return 0
     all_picks = []
@@ -1625,12 +1667,13 @@ def store_top_pick_for_date(predictions_by_date):
             match_date = datetime.strptime(date_str, "%Y-%m-%d").date()
         except Exception:
             continue
-        TopPick.objects.filter(match_date=match_date).delete()
+        TopPick.objects.filter(match_date=match_date, variant=variant).delete()
         for p in picks:
             all_picks.append(TopPick(
                 match_date=match_date,
                 home_team=p["home_team"],
                 away_team=p["away_team"],
+                variant=variant,
                 tip=p["tip"],
                 confidence=p.get("confidence", 0),
                 odds=p.get("odds"),

@@ -34,6 +34,11 @@
       <form method="POST" action="{% url 'regenerate_top_picks' %}" class="inline-form" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
         {% csrf_token %}
         <input type="date" name="match_date" value="{{ today|date:'Y-m-d' }}" min="{{ today|date:'Y-m-d' }}" class="form-control" style="padding:8px 10px; border:1px solid #d1d5db; border-radius:10px;">
+        <select name="variant" class="form-control" style="padding:8px 10px; border:1px solid #d1d5db; border-radius:10px;">
+          <option value="1">Sure 1</option>
+          <option value="2">Sure 2</option>
+          <option value="3">Running Bet</option>
+        </select>
         <button type="submit" class="btn btn-primary btn-sm">Regenerate Top Picks</button>
       </form>
     </div>

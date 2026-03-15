@@ -39,9 +39,16 @@ class MatchPrediction(models.Model):
         return f"{self.home_team} vs {self.away_team} ({self.match_date})"
 
 class TopPick(models.Model):
+    VARIANT_CHOICES = (
+        ("1", "Sure 1"),
+        ("2", "Sure 2"),
+        ("3", "Running Bet"),
+    )
+
     match_date = models.DateField()
     home_team = models.CharField(max_length=100)
     away_team = models.CharField(max_length=100)
+    variant = models.CharField(max_length=1, choices=VARIANT_CHOICES, default="1")
     tip = models.CharField(max_length=50)  # e.g. '1', '2', 'X', 'Over 2.5', 'GG'
     confidence = models.FloatField()
     created_at = models.DateTimeField(auto_now_add=True)
@@ -50,11 +57,11 @@ class TopPick(models.Model):
     odds = models.FloatField(null=True, blank=True)
 
     class Meta:
-        unique_together = ('match_date', 'home_team', 'away_team')
+        unique_together = ('match_date', 'home_team', 'away_team', 'variant')
         ordering = ['match_date']
 
     def __str__(self):
-        return f"{self.match_date} | {self.home_team} vs {self.away_team} - {self.tip} ({self.confidence}%)"
+        return f"{self.match_date} | {self.variant} | {self.home_team} vs {self.away_team} - {self.tip} ({self.confidence}%)"
     
 class MatchOdds(models.Model):
     match = models.OneToOneField("MatchPrediction", on_delete=models.CASCADE, related_name="odds")

@@ -33,6 +33,7 @@ from .utils import (
     explain_pick_reasons,
     fetch_matches_by_date,
     get_top_predictions as utils_get_top_predictions,
+    get_top_predictions_for_variant,
     get_or_train_model_bundle,
     market_edge,
     predict_match_outcome,
@@ -438,7 +439,7 @@ def fetch_odds_for_match(match, competition_code="EPL"):
 
     
 def get_top_predictions(limit=10, variant=1):
-    return utils_get_top_predictions(limit=limit, variant=variant)
+    return get_top_predictions_for_variant(limit=limit, variant=variant)
 # -------------------------
 # Helper: fetch actual results (existing)
 # -------------------------
@@ -565,7 +566,7 @@ from .utils import get_team_metadata  # make sure this exists
 # -------------------------
 # store_top_pick_for_date (uses picks format above)
 # -------------------------
-def store_top_pick_for_date(predictions_by_date, specific_date=None):
+def store_top_pick_for_date(predictions_by_date, specific_date=None, variant="1"):
     """
     Save top picks (from get_top_predictions-like structure) to TopPick DB.
     predictions_by_date: dict date_str -> list of picks
@@ -587,6 +588,7 @@ def store_top_pick_for_date(predictions_by_date, specific_date=None):
                 match_date=match_date,
                 home_team=home_name,
                 away_team=away_name,
+                variant=variant,
                 defaults={
                     "tip": tip,
                     "confidence": confidence,
@@ -616,48 +618,57 @@ def top_picks_view(request):
         except ValueError:
             match_date = today
     else:
-        if variant == "1":
-            upcoming_dates = TopPick.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
-        elif variant == "2":
-            upcoming_dates = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
-        else:
-            upcoming_dates = MatchPrediction.objects.filter(match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
+        upcoming_dates = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("match_date").values_list("match_date", flat=True).distinct()
         match_date = upcoming_dates.first() if upcoming_dates.exists() else today
 
     # Fetch from DB
     if show_past:
-        picks_qs = TopPick.objects.filter(match_date__lt=today).order_by("-match_date")
-        live_variant_picks = None
-    elif variant == "2":
-        predictions_by_date = get_top_predictions(limit=10, variant=2)
-        live_variant_picks = predictions_by_date.get(match_date.strftime("%Y-%m-%d"), [])
-        picks_qs = TopPick.objects.none()
-    elif variant == "3":
-        predictions_by_date = get_top_predictions(limit=10, variant=1)
-        live_variant_picks = []
-        for date_key, day_picks in predictions_by_date.items():
-            for pick in day_picks:
-                live_variant_picks.append({
-                    **pick,
-                    "match_date": date.fromisoformat(date_key),
-                })
-        live_variant_picks = sorted(
-            live_variant_picks,
-            key=lambda item: float(item.get("confidence", 0)),
-            reverse=True,
-        )[:10]
-        picks_qs = TopPick.objects.none()
+        if variant == "3":
+            picks_qs = TopPick.objects.filter(variant=variant, match_date__lt=today).order_by("-confidence", "match_date")
+        else:
+            picks_qs = TopPick.objects.filter(variant=variant, match_date__lt=today).order_by("-match_date")
     else:
-        picks_qs = TopPick.objects.filter(match_date=match_date)
-        live_variant_picks = None
+        if variant == "3":
+            picks_qs = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("-confidence", "match_date")
+        else:
+            picks_qs = TopPick.objects.filter(match_date=match_date, variant=variant)
 
-    if live_variant_picks is not None:
-        pick_keys = [
-            {"home_team": p["home_team"], "away_team": p["away_team"], "match_date": p.get("match_date", match_date)}
-            for p in live_variant_picks
-        ]
-        source = "live"
-    else:
+    pick_keys = list(
+        picks_qs.values(
+            "home_team",
+            "away_team",
+            "match_date",
+        )
+    )
+    source = "cached"
+    prediction_count_for_date = 0
+    if not show_past and match_date:
+        if variant == "3":
+            prediction_count_for_date = MatchPrediction.objects.filter(match_date__gte=today).count()
+        else:
+            prediction_count_for_date = MatchPrediction.objects.filter(match_date=match_date).count()
+    can_generate_top_picks = (
+        not show_past
+        and prediction_count_for_date > 0
+        and not pick_keys
+        and (
+            (variant == "3" and True)
+            or match_date >= today
+        )
+    )
+
+    if not pick_keys and can_generate_top_picks:
+        predictions_by_date = get_top_predictions(limit=10, variant=variant)
+        if variant == "3":
+            store_top_pick_for_date(predictions_by_date, variant=variant)
+        else:
+            target_key = match_date.strftime("%Y-%m-%d")
+            if target_key in predictions_by_date:
+                store_top_pick_for_date({target_key: predictions_by_date[target_key]}, variant=variant)
+        if variant == "3":
+            picks_qs = TopPick.objects.filter(variant=variant, match_date__gte=today).order_by("-confidence", "match_date")
+        else:
+            picks_qs = TopPick.objects.filter(match_date=match_date, variant=variant)
         pick_keys = list(
             picks_qs.values(
                 "home_team",
@@ -665,18 +676,6 @@ def top_picks_view(request):
                 "match_date",
             )
         )
-        source = "cached"
-    prediction_count_for_date = 0
-    if not show_past and match_date:
-        prediction_count_for_date = MatchPrediction.objects.filter(match_date=match_date).count()
-    can_generate_top_picks = (
-        variant == "1"
-        and
-        not show_past
-        and match_date >= today
-        and prediction_count_for_date > 0
-        and not pick_keys
-    )
 
     match_key_to_competition = {}
     match_key_to_prediction = {}
@@ -715,33 +714,21 @@ def top_picks_view(request):
 
     update_actuals_for_top_picks(picks_qs)
 
-    if live_variant_picks is not None:
-        picks = [
-            {
-                "home_team": p["home_team"],
-                "away_team": p["away_team"],
-                "tip": p["tip"],
-                "actual_tip": None,
-                "is_correct": None,
-                "confidence": p["confidence"],
-                "odds": p["odds"],
-                "match_date": p.get("match_date", match_date),
-            }
-            for p in live_variant_picks
-        ]
-    else:
-        picks = list(
-            picks_qs.values(
-                "home_team",
-                "away_team",
-                "tip",
-                "actual_tip",
-                "is_correct",
-                "confidence",
-                "odds",
-                "match_date",
-            )
+    if variant == "3":
+        picks_qs = picks_qs[:10]
+
+    picks = list(
+        picks_qs.values(
+            "home_team",
+            "away_team",
+            "tip",
+            "actual_tip",
+            "is_correct",
+            "confidence",
+            "odds",
+            "match_date",
         )
+    )
 
     if label_filter:
         picks = [p for p in picks if p.get("tip") == label_filter]
@@ -855,6 +842,8 @@ def top_picks_view(request):
 @require_POST
 def regenerate_top_picks(request):
     match_date_str = request.POST.get("match_date")
+    variant = request.POST.get("variant", "1")
+    variant = variant if variant in {"1", "2", "3"} else "1"
 
     if match_date_str:
         try:
@@ -866,19 +855,27 @@ def regenerate_top_picks(request):
 
     target_date = match_date.isoformat()
     if match_date < timezone.localdate():
-        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}&variant={variant}")
 
-    existing_top_picks = TopPick.objects.filter(match_date=match_date).exists()
-    prediction_count = MatchPrediction.objects.filter(match_date=match_date).count()
-    if existing_top_picks or prediction_count == 0:
-        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+    if variant == "3":
+        prediction_count = MatchPrediction.objects.filter(match_date__gte=timezone.localdate()).count()
+    else:
+        prediction_count = MatchPrediction.objects.filter(match_date=match_date).count()
 
-    predictions_by_date = get_top_predictions(limit=10)
+    if prediction_count == 0:
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}&variant={variant}")
+
+    predictions_by_date = get_top_predictions(limit=10, variant=variant)
+    if variant == "3":
+        TopPick.objects.filter(variant=variant, match_date__gte=timezone.localdate()).delete()
+        store_top_pick_for_date(predictions_by_date, variant=variant)
+        return redirect(f"{reverse('top_picks')}?variant={variant}")
+
     if target_date in predictions_by_date:
-        TopPick.objects.filter(match_date=match_date).delete()
-        store_top_pick_for_date({target_date: predictions_by_date[target_date]})
-        return redirect(f"{reverse('top_picks')}?match_date={target_date}")
-    return redirect(f"{reverse('top_picks')}?match_date={target_date}")
+        TopPick.objects.filter(match_date=match_date, variant=variant).delete()
+        store_top_pick_for_date({target_date: predictions_by_date[target_date]}, variant=variant)
+        return redirect(f"{reverse('top_picks')}?match_date={target_date}&variant={variant}")
+    return redirect(f"{reverse('top_picks')}?match_date={target_date}&variant={variant}")
 
 
 # -------------------------
@@ -1478,8 +1475,10 @@ def actual_results_view(request):
 
 def refresh_top_picks(request):
     today = date.today()
-    top_predictions = get_top_predictions(limit=10)
-    store_top_pick_for_date(top_predictions)
+    for variant in ("1", "2", "3"):
+        TopPick.objects.filter(variant=variant, match_date__gte=today).delete()
+        top_predictions = get_top_predictions(limit=10, variant=variant)
+        store_top_pick_for_date(top_predictions, variant=variant)
     return redirect("top-picks_view")
 
 
@@ -1500,43 +1499,12 @@ def export_top_picks(request, format):
             return HttpResponseBadRequest(f"Invalid date format: {e}")
 
     if variant == "3":
-        from types import SimpleNamespace
-
-        picks = []
-        for date_key, day_picks in get_top_predictions(limit=10, variant=1).items():
-            for pick in day_picks:
-                picks.append(
-                    SimpleNamespace(
-                        match_date=date.fromisoformat(date_key),
-                        home_team=pick["home_team"],
-                        away_team=pick["away_team"],
-                        tip=pick["tip"],
-                        confidence=float(pick["confidence"]),
-                        odds=pick.get("odds"),
-                        actual_tip=None,
-                        is_correct=None,
-                    )
-                )
-        picks = sorted(picks, key=lambda item: item.confidence, reverse=True)[:10]
-    elif variant == "2":
-        from types import SimpleNamespace
-
-        live_picks = get_top_predictions(limit=10, variant=2).get(match_date.strftime("%Y-%m-%d"), [])
-        picks = [
-            SimpleNamespace(
-                match_date=match_date,
-                home_team=pick["home_team"],
-                away_team=pick["away_team"],
-                tip=pick["tip"],
-                confidence=float(pick["confidence"]),
-                odds=pick.get("odds"),
-                actual_tip=None,
-                is_correct=None,
-            )
-            for pick in live_picks
-        ]
+        picks = list(
+            TopPick.objects.filter(variant=variant, match_date__gte=timezone.localdate())
+            .order_by("-confidence", "match_date")[:10]
+        )
     else:
-        picks = list(TopPick.objects.filter(match_date=match_date))
+        picks = list(TopPick.objects.filter(match_date=match_date, variant=variant))
 
     if format == "csv":
         response = HttpResponse(content_type="text/csv")
