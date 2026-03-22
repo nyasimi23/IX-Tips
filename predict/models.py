@@ -32,6 +32,8 @@ class MatchPrediction(models.Model):
     # ✅ Actual match outcome
     actual_home_goals = models.IntegerField(null=True, blank=True)
     actual_away_goals = models.IntegerField(null=True, blank=True)
+    actual_ht_home_goals = models.IntegerField(null=True, blank=True)
+    actual_ht_away_goals = models.IntegerField(null=True, blank=True)
     is_accurate = models.BooleanField(default=False)
     status = models.CharField(max_length=20, default="TIMED")
 
@@ -43,6 +45,7 @@ class TopPick(models.Model):
         ("1", "Sure 1"),
         ("2", "Sure 2"),
         ("3", "Running Bet"),
+        ("4", "Mshipi"),
     )
 
     match_date = models.DateField()
@@ -73,7 +76,13 @@ class MatchOdds(models.Model):
     btts_yes = models.FloatField(null=True, blank=True)
     btts_no = models.FloatField(null=True, blank=True)
     bookmaker = models.CharField(max_length=100, null=True, blank=True)
+    market_sources = models.JSONField(default=dict, blank=True)
     last_updated = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        if self.market_sources is None:
+            self.market_sources = {}
+        super().save(*args, **kwargs)
 
     def best_market(self):
         return {
@@ -85,3 +94,44 @@ class MatchOdds(models.Model):
             "GG": self.btts_yes,
             "NG": self.btts_no,
         }
+
+
+class ComboSlip(models.Model):
+    STYLE_CHOICES = (
+        ("safe", "Safe"),
+        ("value", "Value"),
+    )
+
+    name = models.CharField(max_length=120)
+    size = models.PositiveIntegerField(default=5)
+    market_filter = models.CharField(max_length=50, blank=True, default="")
+    style = models.CharField(max_length=10, choices=STYLE_CHOICES, default="safe")
+    combined_odds = models.FloatField(null=True, blank=True)
+    average_confidence = models.FloatField(default=0)
+    priced_legs = models.PositiveIntegerField(default=0)
+    auto_generated = models.BooleanField(default=False)
+    signature = models.CharField(max_length=64, null=True, blank=True, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
+
+class ComboSlipLeg(models.Model):
+    slip = models.ForeignKey(ComboSlip, on_delete=models.CASCADE, related_name="legs")
+    match_date = models.DateField()
+    competition = models.CharField(max_length=20)
+    home_team = models.CharField(max_length=100)
+    away_team = models.CharField(max_length=100)
+    tip = models.CharField(max_length=50)
+    confidence = models.FloatField(default=0)
+    odds = models.FloatField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["match_date", "home_team"]
+
+    def __str__(self):
+        return f"{self.home_team} vs {self.away_team} - {self.tip}"

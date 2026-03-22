@@ -1,0 +1,19 @@
+<div class="support-card mb-3">
+  <div class="sidebar-title">Support Us</div>
+  <a href="https://www.buymeacoffee.com/santos1252" target="_blank">
+    <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" style="height: 40px;">
+  </a>
+</div>
+<div class="sidebar-left">
+  <div class="sidebar-title">Prediction Menu</div>
+  <div class="menu-list">
+    <a class="menu-link {% if active_page == 'predictions' %}active{% endif %}" href="{% url 'predictions_view' %}">Match Predictions</a>
+    <a class="menu-link {% if active_page == 'top_picks' %}active{% endif %}" href="{% url 'top_picks' %}">Top Picks</a>
+    <a class="menu-link {% if active_page == 'correct_score' %}active{% endif %}" href="{% url 'correct_score' %}">Correct Score</a>
+    <a class="menu-link {% if active_page == 'anytime_scorer' %}active{% endif %}" href="{% url 'anytime_scorer' %}">Anytime Scorer</a>
+    <a class="menu-link {% if active_page == 'market_picks' %}active{% endif %}" href="{% url 'market_picks' %}">Market Picks</a>
+    <a class="menu-link {% if active_page == 'combo_builder' %}active{% endif %}" href="{% url 'combo_builder' %}">Combo Builder</a>
+    <a class="menu-link {% if active_page == 'combo_history' %}active{% endif %}" href="{% url 'combo_history' %}">Combo History</a>
+    <a class="menu-link {% if active_page == 'won_slips' %}active{% endif %}" href="{% url 'won_slips' %}">Won Slips</a>
+  </div>
+</div>
