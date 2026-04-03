@@ -1950,6 +1950,7 @@ def store_top_pick_for_date(predictions_by_date, variant="1"):
             ))
     if all_picks:
         TopPick.objects.bulk_create(all_picks)
+        cache.delete("top_pick_slip_summary_v1")
         return len(all_picks)
     return 0
 
@@ -1960,7 +1961,21 @@ def update_actuals_for_top_picks(picks_qs):
     """
     if TopPick is None:
         return 0
-    to_update = picks_qs.filter(actual_tip__isnull=True)
+    to_update = list(picks_qs.filter(actual_tip__isnull=True))
+    if not to_update:
+        return 0
+
+    prediction_rows = MatchPrediction.objects.filter(
+        match_date__in=sorted({pick.match_date for pick in to_update})
+    )
+    prediction_rows_by_date = defaultdict(list)
+    for prediction_row in prediction_rows:
+        prediction_rows_by_date[prediction_row.match_date].append((
+            _team_name_aliases(prediction_row.home_team),
+            _team_name_aliases(prediction_row.away_team),
+            prediction_row,
+        ))
+
     updated = 0
     for pick in to_update:
         pick_home_aliases = _team_name_aliases(pick.home_team)
@@ -1970,14 +1985,10 @@ def update_actuals_for_top_picks(picks_qs):
             continue
 
         # try to match the corresponding MatchPrediction
-        match_qs = MatchPrediction.objects.filter(match_date=pick.match_date)
         found = None
-        for mp in match_qs:
-            if (
-                _team_name_aliases(mp.home_team) & pick_home_aliases
-                and _team_name_aliases(mp.away_team) & pick_away_aliases
-            ):
-                found = mp
+        for home_aliases, away_aliases, prediction_row in prediction_rows_by_date.get(pick.match_date, []):
+            if home_aliases & pick_home_aliases and away_aliases & pick_away_aliases:
+                found = prediction_row
                 break
         if not found:
             continue

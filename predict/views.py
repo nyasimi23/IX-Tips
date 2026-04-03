@@ -650,6 +650,7 @@ def store_top_pick_for_date(predictions_by_date, specific_date=None, variant="1"
                     "is_correct": None,
                 }
             )
+    cache.delete("top_pick_slip_summary_v1")
 
 
 # -------------------------
@@ -738,23 +739,18 @@ def top_picks_view(request):
         prediction_rows = MatchPrediction.objects.filter(
             match_date__in=candidate_dates,
         ).select_related("odds")
-        prediction_rows_by_date = defaultdict(list)
-        for prediction_row in prediction_rows:
-            prediction_rows_by_date[prediction_row.match_date].append(prediction_row)
+        prediction_rows_by_date = _build_prediction_lookup(prediction_rows)
 
         for pick in pick_keys:
             competition_code = None
-            matched_prediction = None
-            pick_home_aliases = _team_name_aliases(pick["home_team"])
-            pick_away_aliases = _team_name_aliases(pick["away_team"])
-            for prediction_row in prediction_rows_by_date.get(pick["match_date"], []):
-                if (
-                    _team_name_aliases(prediction_row.home_team) & pick_home_aliases
-                    and _team_name_aliases(prediction_row.away_team) & pick_away_aliases
-                ):
-                    competition_code = prediction_row.competition
-                    matched_prediction = prediction_row
-                    break
+            matched_prediction = _match_prediction_from_lookup(
+                prediction_rows_by_date,
+                pick["match_date"],
+                pick["home_team"],
+                pick["away_team"],
+            )
+            if matched_prediction:
+                competition_code = matched_prediction.competition
             key = (pick["match_date"], pick["home_team"], pick["away_team"])
             match_key_to_competition[key] = competition_code
             match_key_to_prediction[key] = matched_prediction
@@ -1932,7 +1928,44 @@ def build_match_detail_context(prediction, source=None):
     }
 
 
+def _clear_combo_cache():
+    for key in (
+        "recent_saved_combo_slips_v2::8",
+        "recent_saved_combo_slips_v2::500",
+        "combo_slip_tracking_summary_v1",
+    ):
+        cache.delete(key)
+
+
+def _build_prediction_lookup(prediction_rows):
+    rows_by_date = defaultdict(list)
+    for prediction_row in prediction_rows:
+        rows_by_date[prediction_row.match_date].append((
+            _team_name_aliases(prediction_row.home_team),
+            _team_name_aliases(prediction_row.away_team),
+            prediction_row,
+        ))
+    return rows_by_date
+
+
+def _match_prediction_from_lookup(rows_by_date, match_date, home_team, away_team):
+    home_aliases = _team_name_aliases(home_team)
+    away_aliases = _team_name_aliases(away_team)
+    if not home_aliases or not away_aliases:
+        return None
+
+    for row_home_aliases, row_away_aliases, prediction_row in rows_by_date.get(match_date, []):
+        if row_home_aliases & home_aliases and row_away_aliases & away_aliases:
+            return prediction_row
+    return None
+
+
 def build_top_pick_slip_summary():
+    cache_key = "top_pick_slip_summary_v1"
+    cached_summary = cache.get(cache_key)
+    if cached_summary is not None:
+        return cached_summary
+
     variant_labels = {
         "1": "Sure 1",
         "2": "Sure 2",
@@ -1963,7 +1996,9 @@ def build_top_pick_slip_summary():
             if all(bool(row.get("is_correct")) for row in rows):
                 summary[variant]["won"] += 1
 
-    return [summary[key] for key in ("1", "2", "3", "4")]
+    result = [summary[key] for key in ("1", "2", "3", "4")]
+    cache.set(cache_key, result, timeout=300)
+    return result
 
 
 def build_won_slip_groups(selected_variant=None):
@@ -1980,21 +2015,15 @@ def build_won_slip_groups(selected_variant=None):
 
     pick_dates = set(qs.values_list("match_date", flat=True))
     prediction_rows = MatchPrediction.objects.filter(match_date__in=pick_dates)
-    prediction_rows_by_date = defaultdict(list)
-    for prediction_row in prediction_rows:
-        prediction_rows_by_date[prediction_row.match_date].append(prediction_row)
+    prediction_rows_by_date = _build_prediction_lookup(prediction_rows)
 
     for pick in qs:
-        matched_prediction = None
-        pick_home_aliases = _team_name_aliases(pick.home_team)
-        pick_away_aliases = _team_name_aliases(pick.away_team)
-        for prediction_row in prediction_rows_by_date.get(pick.match_date, []):
-            if (
-                _team_name_aliases(prediction_row.home_team) & pick_home_aliases
-                and _team_name_aliases(prediction_row.away_team) & pick_away_aliases
-            ):
-                matched_prediction = prediction_row
-                break
+        matched_prediction = _match_prediction_from_lookup(
+            prediction_rows_by_date,
+            pick.match_date,
+            pick.home_team,
+            pick.away_team,
+        )
         pick.actual_score = None
         metadata_home_name = matched_prediction.home_team if matched_prediction else pick.home_team
         metadata_away_name = matched_prediction.away_team if matched_prediction else pick.away_team
@@ -2173,28 +2202,27 @@ def build_combo_builder_context(size=5, market_filter="", style="safe"):
 
 
 def recent_saved_combo_slips(limit=8):
+    cache_key = f"recent_saved_combo_slips_v2::{limit}"
+    cached_rows = cache.get(cache_key)
+    if cached_rows is not None:
+        return cached_rows
+
     slips = ComboSlip.objects.prefetch_related("legs").all()[:limit]
     combo_dates = sorted({leg.match_date for slip in slips for leg in slip.legs.all()})
     prediction_rows = MatchPrediction.objects.filter(match_date__in=combo_dates)
-    prediction_rows_by_date = defaultdict(list)
-    for prediction_row in prediction_rows:
-        prediction_rows_by_date[prediction_row.match_date].append(prediction_row)
+    prediction_rows_by_date = _build_prediction_lookup(prediction_rows)
 
     rows = []
     for slip in slips:
         enriched_legs = []
         slip_competitions_to_refresh = set()
         for leg in slip.legs.all():
-            matched_prediction = None
-            leg_home_aliases = _team_name_aliases(leg.home_team)
-            leg_away_aliases = _team_name_aliases(leg.away_team)
-            for prediction_row in prediction_rows_by_date.get(leg.match_date, []):
-                if (
-                    _team_name_aliases(prediction_row.home_team) & leg_home_aliases
-                    and _team_name_aliases(prediction_row.away_team) & leg_away_aliases
-                ):
-                    matched_prediction = prediction_row
-                    break
+            matched_prediction = _match_prediction_from_lookup(
+                prediction_rows_by_date,
+                leg.match_date,
+                leg.home_team,
+                leg.away_team,
+            )
 
             if matched_prediction and matched_prediction.competition:
                 slip_competitions_to_refresh.add((matched_prediction.competition, matched_prediction.match_date))
@@ -2203,16 +2231,12 @@ def recent_saved_combo_slips(limit=8):
             refresh_prediction_statuses(competition_code, refresh_date)
 
         for leg in slip.legs.all():
-            matched_prediction = None
-            leg_home_aliases = _team_name_aliases(leg.home_team)
-            leg_away_aliases = _team_name_aliases(leg.away_team)
-            for prediction_row in prediction_rows_by_date.get(leg.match_date, []):
-                if (
-                    _team_name_aliases(prediction_row.home_team) & leg_home_aliases
-                    and _team_name_aliases(prediction_row.away_team) & leg_away_aliases
-                ):
-                    matched_prediction = prediction_row
-                    break
+            matched_prediction = _match_prediction_from_lookup(
+                prediction_rows_by_date,
+                leg.match_date,
+                leg.home_team,
+                leg.away_team,
+            )
 
             leg_state = {
                 "record": leg,
@@ -2325,17 +2349,26 @@ def recent_saved_combo_slips(limit=8):
             "slip_status_label": slip_status_label,
             "legs": enriched_legs,
         })
+    cache.set(cache_key, rows, timeout=180)
     return rows
 
 
-def combo_slip_tracking_summary():
-    all_slips = recent_saved_combo_slips(limit=500)
-    return {
+def combo_slip_tracking_summary(all_slips=None):
+    if all_slips is None:
+        cache_key = "combo_slip_tracking_summary_v1"
+        cached_summary = cache.get(cache_key)
+        if cached_summary is not None:
+            return cached_summary
+        all_slips = recent_saved_combo_slips(limit=500)
+
+    summary = {
         "total": len(all_slips),
         "won": sum(1 for slip in all_slips if slip["slip_status"] == "won"),
         "active": sum(1 for slip in all_slips if slip["slip_status"] == "active"),
         "lost": sum(1 for slip in all_slips if slip["slip_status"] == "lost"),
     }
+    cache.set("combo_slip_tracking_summary_v1", summary, timeout=180)
+    return summary
 
 
 def generate_all_combo_slips():
@@ -2384,12 +2417,13 @@ def build_combo_history_payload(status_filter="all"):
         status_filter = "all"
 
     saved_slips = recent_saved_combo_slips(limit=500)
+    tracking_summary = combo_slip_tracking_summary(saved_slips)
     if status_filter != "all":
         saved_slips = [slip for slip in saved_slips if slip["slip_status"] == status_filter]
 
     return {
         "saved_slips": saved_slips,
-        "combo_tracking_summary": combo_slip_tracking_summary(),
+        "combo_tracking_summary": tracking_summary,
         "status_filter": status_filter,
         "status_options": [
             {"key": "all", "label": "All"},
@@ -2467,6 +2501,7 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
             )
             for row in combo_rows
         ])
+        _clear_combo_cache()
     else:
         changed = False
         if slip.combined_odds != summary.get("combined_odds"):
@@ -2480,6 +2515,7 @@ def auto_track_combo_slip(context, size, market_filter="", style="safe", return_
             changed = True
         if changed:
             slip.save(update_fields=["combined_odds", "average_confidence", "priced_legs"])
+            _clear_combo_cache()
 
     if return_created:
         return slip, created
