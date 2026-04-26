@@ -9,7 +9,7 @@
   <link href="https://unpkg.com/boxicons@2.1.4/css/boxicons.min.css" rel="stylesheet">
   <link rel="stylesheet" href="{% static 'css/styles.css' %}">
 </head>
-<body>
+<body style="background: var(--bg-primary) !important; color: var(--text-primary); transition: background-color 0.3s ease, color 0.3s ease;" data-bs-theme="light">
   <section id="sidebar">
     <a href="#" class="brand">
       <i class='bx bxs-smile bx-lg'></i>
@@ -68,12 +68,10 @@
           <button type="submit" class="search-btn"><i class='bx bx-search'></i></button>
         </div>
       </form>
-      <input type="checkbox" class="checkbox" id="switch-mode" hidden />
-      <label class="swith-lm" for="switch-mode">
-        <i class="bx bxs-moon"></i>
-        <i class="bx bx-sun"></i>
-        <div class="ball"></div>
-      </label>
+      <button class="theme-toggle" id="theme-toggle" title="Toggle dark/light mode">
+        <i class='bx bxs-moon'></i>
+        <i class='bx bx-sun'></i>
+      </button>
       <a href="#" class="notification">
         <i class='bx bxs-bell bx-tada-hover'></i>
         <span class="num">3</span>
@@ -145,16 +143,25 @@ searchButton.addEventListener('click', function (e) {
     }
 })
 
-// Dark Mode Switch
-const switchMode = document.getElementById('switch-mode');
+// Dark Mode Switch - Unified implementation
+(function() {
+    const themeToggle = document.getElementById('theme-toggle');
 
-switchMode.addEventListener('change', function () {
-    if (this.checked) {
-        document.body.classList.add('dark');
-    } else {
-        document.body.classList.remove('dark');
+    function applyTheme(isDark) {
+        document.body.classList.toggle('dark', isDark);
+        localStorage.setItem('theme', isDark ? 'dark' : 'light');
     }
-})
+
+    // Check for saved theme preference or default to light
+    const savedTheme = localStorage.getItem('theme');
+    applyTheme(savedTheme === 'dark');
+
+    if (themeToggle) {
+        themeToggle.addEventListener('click', function () {
+            applyTheme(!document.body.classList.contains('dark'));
+        });
+    }
+})();
 
 // Notification Menu Toggle
 document.querySelector('.notification').addEventListener('click', function () {

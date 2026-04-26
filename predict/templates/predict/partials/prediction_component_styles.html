@@ -12,71 +12,143 @@
   min-height: 36px;
   padding: 7px 12px;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #1e293b;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
   text-decoration: none;
   font-size: 0.78rem;
   font-weight: 600;
   transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
 }
+
+body.dark .pill-link,
+body.dark .header-link,
+body.dark .header-button,
+body.dark .action-pill,
+body.dark .filter-pill,
+body.dark .status-pill,
+body.dark .header-pill,
+body.dark .variant-pill {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
 .pill-link:hover,
 .header-link:hover,
 .action-pill:hover,
 .filter-pill:hover,
 .status-pill:hover,
 .variant-pill:hover {
-  background: #f8fafc;
-  color: #0f172a;
+  background: var(--hover-bg);
+  color: var(--text-primary);
   transform: translateY(-1px);
 }
+
+body.dark .pill-link:hover,
+body.dark .header-link:hover,
+body.dark .action-pill:hover,
+body.dark .filter-pill:hover,
+body.dark .status-pill:hover,
+body.dark .variant-pill:hover {
+  background: var(--hover-bg);
+  color: var(--text-primary);
+}
+
 .summary-card,
 .summary-metric,
 .view-summary-card {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #dbeafe;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
 }
+
+body.dark .summary-card,
+body.dark .summary-metric,
+body.dark .view-summary-card {
+  background: var(--card-bg);
+  border-color: var(--border-color);
+}
+
 .summary-card {
   padding: 14px;
 }
+
 .summary-metric,
 .view-summary-card {
   padding: 12px;
 }
+
 .control-label {
   font-size: 0.64rem;
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
+
+body.dark .control-label {
+  color: var(--text-secondary);
+}
+
 .date-input,
 .control-select,
 .save-input {
   min-height: 38px;
   border-radius: 12px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
   font-weight: 600;
   font-size: 0.8rem;
+  color: var(--text-primary);
 }
+
+body.dark .date-input,
+body.dark .control-select,
+body.dark .save-input {
+  background: var(--input-bg);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
 .header-button {
-  border-color: #93c5fd;
-  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-  color: #1d4ed8;
+  border-color: var(--blue);
+  background: var(--light-blue);
+  color: var(--blue);
   font-weight: 700;
 }
-.header-pill {
-  background: linear-gradient(135deg, #f8fafc 0%, #ffffff 100%);
-  color: #475569;
+
+body.dark .header-button {
+  background: var(--dark-blue);
+  border-color: var(--blue);
+  color: var(--blue);
 }
+
+.header-pill {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
+body.dark .header-pill {
+  background: var(--card-bg);
+  color: var(--text-secondary);
+}
+
 .filter-pill.active,
 .status-pill.active,
 .variant-pill.active,
 .pill-link.active {
-  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-  border-color: #93c5fd;
-  color: #1d4ed8;
+  background: var(--light-blue);
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+body.dark .filter-pill.active,
+body.dark .status-pill.active,
+body.dark .variant-pill.active,
+body.dark .pill-link.active {
+  background: var(--dark-blue);
+  border-color: var(--blue);
+  color: var(--blue);
 }

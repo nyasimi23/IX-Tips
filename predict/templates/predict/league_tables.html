@@ -12,7 +12,7 @@
     </div>
     <div id="league-table-container" class="table-responsive">
       <table class="table table-sm table-striped table-bordered mb-0" style="font-size: 0.78rem;">
-        <thead class="table-light">
+        <thead class="league-table-header">
           <tr>
             <th>#</th>
             <th>Team</th>
@@ -43,3 +43,23 @@
     </div>
   </div>
 </div>
+
+<style>
+html body.dark .league-table-header {
+  background: var(--table-header-bg) !important;
+  color: var(--text-primary) !important;
+}
+html body.dark .table.table-striped > tbody > tr:nth-of-type(odd) > * {
+  background-color: var(--hover-bg) !important;
+}
+html body.dark .table.table-striped > tbody > tr:nth-of-type(even) > * {
+  background-color: var(--card-bg) !important;
+}
+html body.dark .table.table-bordered > * {
+  border-color: var(--border-color) !important;
+}
+html body.dark .table td,
+html body.dark .table th {
+  color: var(--text-primary) !important;
+}
+</style>

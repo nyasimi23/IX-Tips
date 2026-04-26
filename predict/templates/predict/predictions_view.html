@@ -12,10 +12,10 @@
 {% include "predict/partials/prediction_shell_styles.html" %}
 .support-card, .sidebar-left, .sidebar-right, .page-shell { margin-bottom: 20px; }
 .sidebar-right {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 22px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 40px var(--shadow);
   backdrop-filter: blur(10px);
   padding: 10px;
 }
@@ -24,6 +24,7 @@
   font-size: 0.92rem;
   font-weight: 800;
   margin-bottom: 0;
+  color: var(--text-primary);
 }
 .sidebar-right .form-select-sm {
   font-size: 0.78rem;
@@ -32,6 +33,7 @@
 }
 .sidebar-right .table {
   font-size: 0.8rem;
+  color: var(--text-primary);
 }
 .team-logo {
   width: 22px;
@@ -40,7 +42,7 @@
 }
 .page-header { gap: 18px; margin-bottom: 24px; padding-bottom: 18px; }
 .section-title { font-size: clamp(1.9rem, 3vw, 2.4rem); }
-.section-subtitle { margin-top: 6px; font-size: 0.98rem; color: #64748b; }
+.section-subtitle { margin-top: 6px; font-size: 0.98rem; color: var(--text-secondary); }
 .action-row {
   display: flex;
   gap: 10px;
@@ -55,9 +57,9 @@
   min-height: 42px;
   padding: 9px 14px;
   border-radius: 999px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
-  color: #334155;
+  border: 1px solid var(--border-color);
+  background: var(--card-bg);
+  color: var(--text-primary);
   font-size: 0.82rem;
   font-weight: 700;
   cursor: pointer;
@@ -66,8 +68,9 @@
   max-width: 220px;
   min-height: 44px;
   border-radius: 14px;
-  border: 1px solid #cbd5e1;
-  background: #fff;
+  border: 1px solid var(--border-color);
+  background: var(--input-bg);
+  color: var(--text-primary);
   font-weight: 600;
 }
 .predictions-grid {
@@ -76,21 +79,21 @@
   width: 100%;
   border-radius: 18px;
   overflow: hidden;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.08);
-  background-color: white;
+  box-shadow: 0 12px 28px var(--shadow);
+  background-color: var(--card-bg);
   margin-bottom: 20px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
 }
 .grid-header, .grid-row {
   display: flex;
   align-items: stretch;
-  border-bottom: 1px solid #e9ecef;
+  border-bottom: 1px solid var(--border-color);
 }
 .grid-header {
-  background: linear-gradient(180deg, #f8fbff 0%, #eff4fa 100%);
+  background: var(--table-header-bg);
   font-weight: bold;
   padding: 12px 0;
-  color: #334155;
+  color: var(--text-primary);
   text-align: center;
   font-size: 0.72rem;
 }
@@ -106,9 +109,10 @@
 }
 .grid-row {
   padding: 10px 0;
+  background: var(--card-bg);
   transition: background-color 0.2s ease;
 }
-.grid-row:hover { background-color: #f5f5f5; }
+.grid-row:hover { background-color: var(--hover-bg); }
 .grid-row:last-child { border-bottom: none; }
 .grid-col {
   padding: 9px 5px;
@@ -120,7 +124,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-size: 0.72rem;
-  color: #334155;
+  color: var(--text-primary);
 }
 .grid-col:nth-child(1) { flex: 1.2; text-align: center; }
 .grid-col:nth-child(2) { flex: 1.1; text-align: center; }
@@ -154,7 +158,7 @@
 .match-info .vs-separator {
   font-weight: bold;
   margin: 0 4px;
-  color: #888;
+  color: var(--text-secondary);
   font-size: 0.8em;
 }
 body.menu-expanded .match-info .match-link {
@@ -184,18 +188,18 @@ body.menu-collapsed .league-sidebar {
 .comp-name {
   font-size: 0.64rem;
   font-weight: 500;
-  color: #555;
+  color: var(--text-secondary);
 }
 .date-time .date { font-weight: bold; }
-.date-time .time { font-size: 0.6rem; color: #666; }
+.date-time .time { font-size: 0.6rem; color: var(--text-secondary); }
 .predicted-score-value {
   font-size: 0.84rem;
   font-weight: bold;
-  color: #333;
+  color: var(--text-primary);
 }
 .predicted-winner-chip.bg-secondary {
-  background-color: #e2e3e5;
-  color: #6c757d;
+  background-color: var(--hover-bg);
+  color: var(--text-secondary);
 }
 .outcome-prediction {
   position: relative;
@@ -204,7 +208,7 @@ body.menu-collapsed .league-sidebar {
 .confidence-bar-container {
   width: 76px;
   height: 16px;
-  background-color: #e9ecef;
+  background-color: var(--hover-bg);
   border-radius: 10px;
   overflow: hidden;
   display: flex;
@@ -214,7 +218,7 @@ body.menu-collapsed .league-sidebar {
 }
 .confidence-bar {
   height: 100%;
-  background-color: #007bff;
+  background-color: var(--blue);
   position: absolute;
   left: 0;
   top: 0;
@@ -236,7 +240,7 @@ body.menu-collapsed .league-sidebar {
 }
 .status small {
   font-size: 0.7em;
-  color: #888;
+  color: var(--text-secondary);
   display: block;
 }
 @media (max-width: 768px) {
@@ -266,7 +270,7 @@ body.menu-collapsed .league-sidebar {
   .predicted-score-value {
     font-size: 1.1em;
     font-weight: bold;
-    color: #333;
+    color: var(--text-primary);
   }
   .predicted-score-value.correct { color: #28a745; }
   .date-input {

@@ -31,41 +31,21 @@
   flex-wrap: wrap;
   margin-bottom: 12px;
   padding-bottom: 12px;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--border-color);
 }
 .page-title {
   font-size: clamp(1.35rem, 2.2vw, 1.7rem);
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary);
   margin: 0;
   line-height: 1.15;
 }
 .page-subtitle {
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 4px;
   font-size: 0.8rem;
 }
 .header-actions { gap: 6px; }
-.variant-pill.active {
-  color: #1d4ed8;
-  border-color: #93c5fd;
-  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-}
-.variant-pill.active.variant-2 {
-  color: #0f172a;
-  border-color: #94a3b8;
-  background: linear-gradient(135deg, #e2e8f0 0%, #f8fafc 100%);
-}
-.variant-pill.active.variant-3 {
-  color: #047857;
-  border-color: #86efac;
-  background: linear-gradient(135deg, #dcfce7 0%, #effcf5 100%);
-}
-.variant-pill.active.variant-4 {
-  color: #b45309;
-  border-color: #fcd34d;
-  background: linear-gradient(135deg, #fef3c7 0%, #fffbeb 100%);
-}
 .controls-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
@@ -73,14 +53,14 @@
   margin-bottom: 12px;
 }
 .control-card {
-  background: #fff;
-  border: 1px solid #e2e8f0;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 18px;
   padding: 12px;
 }
 .summary-card {
-  background: linear-gradient(135deg, #eff6ff 0%, #f8fbff 100%);
-  border: 1px solid #bfdbfe;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 20px;
   padding: 14px;
   margin-bottom: 10px;
@@ -92,8 +72,8 @@
   margin-top: 10px;
 }
 .summary-metric {
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid #dbeafe;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 12px;
 }
@@ -102,16 +82,16 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-bottom: 6px;
 }
 .summary-value {
   font-size: 1.15rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 .summary-note {
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 0.82rem;
   margin-top: 8px;
 }
@@ -122,31 +102,34 @@
   margin-bottom: 10px;
 }
 .slip-summary-card {
-  background: rgba(255, 255, 255, 0.92);
-  border: 1px solid #dbeafe;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 18px;
   padding: 13px;
 }
 .slip-summary-title {
   font-size: 0.82rem;
   font-weight: 800;
-  color: #334155;
+  color: var(--text-primary);
   margin-bottom: 8px;
 }
 .slip-summary-main {
   font-size: 1.2rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 .slip-summary-sub {
   font-size: 0.8rem;
-  color: #64748b;
+  color: var(--text-secondary);
   margin-top: 4px;
 }
 .date-input,
 .select-input {
   width: 100%;
-  color: #0f172a;
+  color: var(--text-primary);
+  background: var(--input-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
   padding: 0 10px;
 }
 .filters-row,
@@ -156,14 +139,19 @@
   flex-wrap: wrap;
   gap: 8px;
 }
-.badge-info-custom {
-  background-color: #d1ecf1;
-  color: #0c5460;
+
+/* Table overrides for dark mode */
+.top-picks-table-container {
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 22px;
+  overflow: hidden;
 }
 .top-picks-table {
   border-collapse: separate;
   border-spacing: 0;
   font-size: 0.82rem;
+  color: var(--text-primary);
 }
 .team-cell {
   min-width: 230px;
@@ -184,9 +172,9 @@
   flex: 0 0 20px;
   font-size: 0.55rem;
   font-weight: 700;
-  color: #1e3a8a;
-  background: linear-gradient(135deg, #dbeafe, #bfdbfe);
-  border: 1px solid #93c5fd;
+  color: var(--blue);
+  background: var(--light-blue);
+  border: 1px solid var(--blue);
   text-transform: uppercase;
 }
 .team-line {
@@ -197,7 +185,7 @@
 }
 .team-name {
   font-weight: 600;
-  color: #111827;
+  color: var(--text-primary);
   white-space: nowrap;
   font-size: 0.82rem;
 }
@@ -208,8 +196,8 @@
   width: 1.55rem;
   height: 1.55rem;
   border-radius: 9999px;
-  background: #eff6ff;
-  color: #2563eb;
+  background: var(--light-blue);
+  color: var(--blue);
   font-weight: 700;
   font-size: 0.65rem;
   flex: 0 0 1.55rem;
@@ -223,11 +211,11 @@
   gap: 0.35rem;
   padding: 0.25rem 0.5rem;
   border-radius: 9999px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
   white-space: nowrap;
   font-weight: 600;
-  color: #334155;
+  color: var(--text-primary);
   font-size: 0.72rem;
 }
 .competition-logo {
@@ -239,9 +227,23 @@
 .top-picks-table th {
   font-size: 0.68rem;
   padding: 0.58rem 0.62rem;
+  background: var(--table-header-bg);
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
 }
 .top-picks-table td {
   padding: 0.62rem 0.62rem;
+  color: var(--text-primary);
+  border-bottom: 1px solid var(--border-color);
+}
+.top-picks-table tbody tr {
+  background: var(--card-bg);
+}
+.top-picks-table tbody tr:nth-child(odd) {
+  background: var(--hover-bg);
+}
+.top-picks-table tbody tr:hover {
+  background: var(--hover-bg);
 }
 .reason-list {
   display: flex;
@@ -254,9 +256,9 @@
   align-items: center;
   padding: 0.18rem 0.45rem;
   border-radius: 9999px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  color: #475569;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
   font-size: 0.63rem;
   line-height: 1.2;
   white-space: nowrap;
@@ -269,15 +271,31 @@
 }
 .metric-subtle {
   font-size: 0.66rem;
-  color: #64748b;
+  color: var(--text-secondary);
   white-space: nowrap;
 }
 .actual-score {
   margin-top: 0.24rem;
   font-size: 0.68rem;
   font-weight: 700;
-  color: #475569;
+  color: var(--text-secondary);
 }
+
+/* Override Tailwind inline classes in dark mode */
+body.dark .bg-white { background-color: var(--card-bg) !important; }
+body.dark .bg-slate-100 { background-color: var(--table-header-bg) !important; }
+body.dark .text-slate-800 { color: var(--text-primary) !important; }
+body.dark .text-gray-700 { color: var(--text-primary) !important; }
+body.dark .divide-gray-200 { border-color: var(--border-color) !important; }
+body.dark .border-gray-200 { border-color: var(--border-color) !important; }
+body.dark .hover\:bg-slate-50:hover { background-color: var(--hover-bg) !important; }
+body.dark .bg-slate-50 { background-color: var(--table-header-bg) !important; }
+body.dark .text-gray-500 { color: var(--text-secondary) !important; }
+body.dark .text-gray-400 { color: var(--text-secondary) !important; }
+body.dark .text-gray-600 { color: var(--text-secondary) !important; }
+body.dark .border-gray-300 { border-color: var(--border-color) !important; }
+body.dark .text-slate-900 { color: var(--text-primary) !important; }
+
 @media (max-width: 768px) {
   .sidebar-left, .support-card, .page-shell {
     padding: 16px;
@@ -498,11 +516,11 @@
 </div>
 {% endif %}
 
-<div class="bg-white rounded-2xl shadow-md border border-gray-200 overflow-hidden">
+<div class="top-picks-table-container shadow-md rounded-2xl overflow-hidden">
   {% if prediction %}
     <div class="overflow-x-auto">
-      <table class="top-picks-table min-w-full text-sm text-left text-gray-700">
-        <thead class="bg-slate-100 text-slate-800 uppercase tracking-wide">
+      <table class="top-picks-table min-w-full text-sm text-left">
+        <thead>
           <tr>
             <th>Date</th>
             <th>Comp</th>
@@ -512,9 +530,9 @@
             <th class="text-center">Odds</th>
           </tr>
         </thead>
-        <tbody class="divide-y divide-gray-200">
+        <tbody>
           {% for p in prediction %}
-          <tr class="hover:bg-slate-50">
+          <tr>
             <td class="font-semibold whitespace-nowrap">
               <div>{{ p.match_date|date:"Y-m-d" }}</div>
               {% if p.match_time %}
