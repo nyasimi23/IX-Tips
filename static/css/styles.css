@@ -1163,12 +1163,16 @@ body.dark .form-select:focus {
         width: 180px;
     }
 	#sidebar {
-		width: 176px;
+		width: 60px;
+	}
+	#sidebar .side-menu li a span,
+	#sidebar .brand span {
+		display: none;
 	}
 
 	#content {
 		width: calc(100% - 60px);
-		left: 176px;
+		left: 60px;
 	}
 
 	#content nav .nav-link {
@@ -1197,6 +1201,26 @@ body.dark .form-select:focus {
     #content nav .profile-menu {
         width: 150px;
     }
+	#sidebar {
+		width: 0;
+		padding: 0;
+		border-right: none;
+	}
+	#sidebar.show {
+		width: 188px;
+		padding: initial;
+		border-right: 1px solid var(--border-color);
+	}
+	#sidebar .side-menu li a span,
+	#sidebar .brand span {
+		display: inline;
+	}
+
+	#content {
+		width: 100%;
+		left: 0;
+	}
+
 	#content nav form .form-input input {
 		display: none;
 	}
@@ -1206,7 +1230,7 @@ body.dark .form-select:focus {
 		height: auto;
 		background: transparent;
 		border-radius: none;
-		color: var(--dark);
+		color: var(--text-primary);
 	}
 
 	#content nav form.show .form-input input {
