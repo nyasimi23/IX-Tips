@@ -1,4 +1,4 @@
-{% extends "predict/base_prediction_page.html" %}
+{% extends "predict/base_prediction_dashboard.html" %}
 
 {% block page_title %}IX-Tips - Combo Builder{% endblock %}
 
@@ -239,9 +239,11 @@ body.dark .saved-leg-pill, body.dark .tip-pill {
 }
 {% endblock %}
 
-{% block sidebar %}
+{% block left_sidebar %}
 {% include "predict/partials/prediction_menu_block.html" with active_page="combo_builder" %}
 {% endblock %}
+
+{% block right_sidebar %}{% include "predict/league_tables.html" %}{% endblock %}
 
 {% block page_header %}
 {% include "predict/partials/prediction_page_header.html" with header_title="Combo Builder" header_subtitle="Preset 3, 5, and 10-leg slips built from the strongest market-specific picks." header_actions_template="predict/partials/combo_builder_header_actions.html" header_actions_class="header-actions" %}

@@ -1,4 +1,4 @@
-{% extends "predict/base_prediction_page.html" %}
+{% extends "predict/base_prediction_dashboard.html" %}
 
 {% block page_title %}IX-Tips - Won Slips{% endblock %}
 
@@ -150,9 +150,11 @@
 }
 {% endblock %}
 
-{% block sidebar %}
+{% block left_sidebar %}
 {% include "predict/partials/prediction_menu_block.html" with active_page="won_slips" %}
 {% endblock %}
+
+{% block right_sidebar %}{% include "predict/league_tables.html" %}{% endblock %}
 
 {% block page_header %}
 <div class="page-header">
@@ -206,7 +208,7 @@
             <div class="fixture-stack">
               <div class="fixture-team">
                 {% if leg.home_logo %}
-                <img src="{{ leg.home_logo }}" alt="{{ leg.display_home_team }}" class="team-logo rounded-full bg-white border border-gray-200 p-0.5" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+                <img src="{{ leg.home_logo }}" alt="{{ leg.display_home_team }}" class="team-logo" style="border-radius:9999px; border:1px solid var(--border-color); padding:2px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
                 {% endif %}
                 <span class="team-badge" {% if leg.home_logo %}style="display:none"{% endif %}>{{ leg.home_initials }}</span>
                 <span class="team-name">{{ leg.display_home_team }}</span>
@@ -214,7 +216,7 @@
               <div class="fixture-vs">vs</div>
               <div class="fixture-team">
                 {% if leg.away_logo %}
-                <img src="{{ leg.away_logo }}" alt="{{ leg.display_away_team }}" class="team-logo rounded-full bg-white border border-gray-200 p-0.5" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
+                <img src="{{ leg.away_logo }}" alt="{{ leg.display_away_team }}" class="team-logo" style="border-radius:9999px; border:1px solid var(--border-color); padding:2px;" onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-flex';">
                 {% endif %}
                 <span class="team-badge" {% if leg.away_logo %}style="display:none"{% endif %}>{{ leg.away_initials }}</span>
                 <span class="team-name">{{ leg.display_away_team }}</span>

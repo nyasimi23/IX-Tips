@@ -1,4 +1,4 @@
-{% extends "predict/base_prediction_page.html" %}
+{% extends "predict/base_prediction_dashboard.html" %}
 
 {% block page_title %}IX-Tips - Market Picks{% endblock %}
 
@@ -441,9 +441,11 @@ body.dark .settled-text.push { color: #fcd34d; }
 }
 {% endblock %}
 
-{% block sidebar %}
+{% block left_sidebar %}
 {% include "predict/partials/prediction_menu_block.html" with active_page="market_picks" %}
 {% endblock %}
+
+{% block right_sidebar %}{% include "predict/league_tables.html" %}{% endblock %}
 
 {% block page_header %}
 {% include "predict/partials/prediction_page_header.html" with header_class="mb-4" header_title="Market Picks" header_subtitle="Start with a market category, then drill into the exact pick type you want." header_actions_template="predict/partials/market_picks_header_actions.html" header_actions_class="action-row" %}

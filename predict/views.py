@@ -898,6 +898,8 @@ def top_picks_view(request):
             "fully_priced": len(priced_legs) == len(visible_picks),
         }
 
+    selected_code = request.GET.get("competition", "PL")
+    league_table = get_league_table(selected_code)
     return render(request, "predict/top_picks.html", {
         "prediction": paginated_picks,
         "page_obj": paginated_picks,
@@ -911,6 +913,9 @@ def top_picks_view(request):
         "header_label": "Mshipi" if variant == "4" else ("All Upcoming Dates" if variant == "3" else match_date.strftime("%B %d, %Y")),
         "accumulator_summary": accumulator_summary,
         "slip_summary": build_top_pick_slip_summary(),
+        "league_table": league_table,
+        "competitions": competitions,
+        "selected_competition": selected_code,
     })
 
 
@@ -919,6 +924,8 @@ def won_slips_view(request):
     selected_variant = request.GET.get("variant")
     selected_variant = selected_variant if selected_variant in {"1", "2", "3", "4"} else ""
     won_slips = build_won_slip_groups(selected_variant or None)
+    selected_code = request.GET.get("competition", "PL")
+    league_table = get_league_table(selected_code)
 
     return render(request, "predict/won_slips.html", {
         "won_slips": won_slips,
@@ -930,6 +937,9 @@ def won_slips_view(request):
             ("3", "Running Bet"),
             ("4", "Mshipi"),
         ],
+        "league_table": league_table,
+        "competitions": competitions,
+        "selected_competition": selected_code,
     })
 
 
@@ -1010,6 +1020,10 @@ def combo_builder_view(request):
     context["tracked_slip"] = auto_track_combo_slip(context, size=size, market_filter=market_filter, style=style)
     context["saved_slips"] = recent_saved_combo_slips()
     context["combo_tracking_summary"] = combo_slip_tracking_summary()
+    selected_code = request.GET.get("competition", "PL")
+    context["league_table"] = get_league_table(selected_code)
+    context["competitions"] = competitions
+    context["selected_competition"] = selected_code
     return render(request, "predict/combo_builder.html", context)
 
 
@@ -1307,6 +1321,8 @@ def market_picks_view(request):
     }
     priced_only_count = len(priced_rows)
 
+    selected_code = request.GET.get("competition", "PL")
+    league_table = get_league_table(selected_code)
     return render(request, "predict/market_picks.html", {
         "predictions": rows,
         "selected_market": selected_market,
@@ -1352,6 +1368,9 @@ def market_picks_view(request):
             for key, data in get_market_groups().items()
             if key != "all"
         ],
+        "league_table": league_table,
+        "competitions": competitions,
+        "selected_competition": selected_code,
     })
 
 
@@ -2439,6 +2458,10 @@ def build_combo_history_payload(status_filter="all"):
 @require_GET
 def combo_history_view(request):
     context = build_combo_history_payload(request.GET.get("status", "all"))
+    selected_code = request.GET.get("competition", "PL")
+    context["league_table"] = get_league_table(selected_code)
+    context["competitions"] = competitions
+    context["selected_competition"] = selected_code
     return render(request, "predict/combo_history.html", context)
 
 
@@ -2864,21 +2887,31 @@ def build_anytime_scorer_rows(match_date_str=None):
 def correct_score_view(request):
     match_date, rows = build_correct_score_rows(request.GET.get("match_date"))
     selected_date = match_date or timezone.localdate().isoformat()
+    selected_code = request.GET.get("competition", "PL")
+    league_table = get_league_table(selected_code)
 
     return render(request, "predict/correct_score.html", {
         "predictions": rows,
         "selected_date": selected_date,
+        "league_table": league_table,
+        "competitions": competitions,
+        "selected_competition": selected_code,
     })
 
 
 def anytime_scorer_view(request):
     match_date, rows = build_anytime_scorer_rows(request.GET.get("match_date"))
     selected_date = match_date or timezone.localdate().isoformat()
+    selected_code = request.GET.get("competition", "PL")
+    league_table = get_league_table(selected_code)
 
     return render(request, "predict/anytime_scorer.html", {
         "predictions": rows,
         "selected_date": selected_date,
         "is_live": bool(rows),
+        "league_table": league_table,
+        "competitions": competitions,
+        "selected_competition": selected_code,
     })
 
 

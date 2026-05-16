@@ -1,4 +1,4 @@
-{% extends "predict/base_prediction_page.html" %}
+{% extends "predict/base_prediction_dashboard.html" %}
 
 {% block page_title %}IX-Tips - Anytime Scorer{% endblock %}
 
@@ -129,9 +129,11 @@
 }
 {% endblock %}
 
-{% block sidebar %}
+{% block left_sidebar %}
 {% include "predict/partials/prediction_menu_block.html" with active_page="anytime_scorer" %}
 {% endblock %}
+
+{% block right_sidebar %}{% include "predict/league_tables.html" %}{% endblock %}
 
 {% block page_header %}
 {% include "predict/partials/prediction_page_header.html" with header_class="mb-4" header_title="Anytime Scorer" header_subtitle="Top-scorer based picks ranked with projected team goals." header_actions_template="predict/partials/anytime_scorer_header_actions.html" header_actions_class="action-row" %}

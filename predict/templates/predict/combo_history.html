@@ -1,4 +1,4 @@
-{% extends "predict/base_prediction_page.html" %}
+{% extends "predict/base_prediction_dashboard.html" %}
 
 {% block page_title %}IX-Tips - Combo History{% endblock %}
 
@@ -6,10 +6,10 @@
 {% include "predict/partials/prediction_shell_styles.html" %}
 {% include "predict/partials/prediction_component_styles.html" %}
 .summary-card, .saved-slip-card {
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid rgba(226, 232, 240, 0.9);
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
   border-radius: 22px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 18px 40px var(--shadow);
   backdrop-filter: blur(10px);
   padding: 10px;
 }
@@ -21,18 +21,18 @@
   margin-bottom: 14px;
 }
 .summary-metric {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: var(--hover-bg);
+  border: 1px solid var(--border-color);
   border-radius: 16px;
   padding: 14px;
 }
 .summary-value {
   font-size: 1.1rem;
   font-weight: 800;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 .summary-note, .meta-line {
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 0.8rem;
   margin-top: 4px;
 }
@@ -69,15 +69,15 @@
   font-size: 0.82rem;
   font-weight: 800;
 }
-.saved-slip-status.active { background: #dbeafe; color: #1d4ed8; }
-.saved-slip-status.won { background: #dcfce7; color: #047857; }
-.saved-slip-status.lost { background: #fee2e2; color: #b91c1c; }
+.saved-slip-status.active { background: var(--info-bg); color: var(--info-text); }
+.saved-slip-status.won { background: var(--success-bg); color: var(--success-text); }
+.saved-slip-status.lost { background: var(--error-bg); color: var(--error-text); }
 .saved-slip-status.pending,
-.saved-slip-status.push { background: #fef3c7; color: #b45309; }
+.saved-slip-status.push { background: var(--warning-bg); color: var(--warning-text); }
 .fixture-line {
   font-size: 1rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 .tip-pill {
   display: inline-flex;
@@ -86,9 +86,9 @@
   min-height: 36px;
   padding: 7px 12px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-  border: 1px solid #93c5fd;
-  color: #1d4ed8;
+  background: var(--light-blue);
+  border: 1px solid var(--blue);
+  color: var(--blue);
   font-weight: 700;
 }
 .stat-row {
@@ -96,12 +96,12 @@
   gap: 14px;
   flex-wrap: wrap;
   margin-top: 12px;
-  color: #475569;
+  color: var(--text-secondary);
   font-size: 0.88rem;
   font-weight: 600;
 }
 .saved-slip-toggle {
-  color: #1d4ed8;
+  color: var(--blue);
   font-size: 0.78rem;
   font-weight: 800;
   white-space: nowrap;
@@ -112,7 +112,7 @@
   margin-top: 12px;
 }
 .saved-leg-row {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--border-color);
   border-radius: 14px;
   padding: 12px 14px;
   display: flex;
@@ -122,20 +122,20 @@
   flex-wrap: wrap;
 }
 .saved-leg-row.correct {
-  border-color: #86efac;
-  background: linear-gradient(135deg, #f0fdf4 0%, #ffffff 100%);
+  border-color: var(--success-border);
+  background: var(--success-bg);
 }
 .saved-leg-row.incorrect {
-  border-color: #fca5a5;
-  background: linear-gradient(135deg, #fff1f2 0%, #ffffff 100%);
+  border-color: var(--error-border);
+  background: var(--error-bg);
 }
 .saved-leg-fixture {
   font-size: 0.95rem;
   font-weight: 700;
-  color: #0f172a;
+  color: var(--text-primary);
 }
 .saved-leg-meta {
-  color: #64748b;
+  color: var(--text-secondary);
   font-size: 0.78rem;
 }
 .saved-leg-pill {
@@ -145,9 +145,9 @@
   min-height: 36px;
   padding: 7px 12px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #dbeafe 0%, #eff6ff 100%);
-  border: 1px solid #93c5fd;
-  color: #1d4ed8;
+  background: var(--light-blue);
+  border: 1px solid var(--blue);
+  color: var(--blue);
   font-weight: 700;
 }
 @media (max-width: 767px) {
@@ -155,9 +155,11 @@
 }
 {% endblock %}
 
-{% block sidebar %}
+{% block left_sidebar %}
 {% include "predict/partials/prediction_menu_block.html" with active_page="combo_history" %}
 {% endblock %}
+
+{% block right_sidebar %}{% include "predict/league_tables.html" %}{% endblock %}
 
 {% block page_header %}
 {% include "predict/partials/prediction_page_header.html" with header_title="Combo History" header_subtitle="Track won, active, and lost combos across saved and auto-tracked slips." header_actions_template="predict/partials/combo_history_header_actions.html" header_actions_class="action-row" %}
