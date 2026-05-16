@@ -143,6 +143,7 @@
 }
 .match-info .team-display {
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
   margin: 0 2px;
@@ -171,8 +172,28 @@
   font-weight: 500;
   color: var(--text-secondary);
 }
-.date-time .date { font-weight: bold; }
 .date-time .time { font-size: 0.6rem; color: var(--text-secondary); }
+.form-dots {
+  display: flex;
+  gap: 2px;
+  margin-top: 2px;
+  justify-content: center;
+}
+.form-dot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  font-size: 0.48rem;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  flex-shrink: 0;
+}
+.form-w { background: #16a34a; }
+.form-d { background: #ca8a04; }
+.form-l { background: #dc2626; }
 .predicted-score-value {
   font-size: 0.84rem;
   font-weight: bold;
@@ -322,11 +343,17 @@
           <div class="team-display">
             <img src="{{ match.home_logo }}" class="team-logo">
             <span class="team-name">{{ match.home_team }}</span>
+            {% if match.home_form %}
+            <span class="form-dots">{% for r in match.home_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
+            {% endif %}
           </div>
           <span class="vs-separator">-</span>
           <div class="team-display">
             <img src="{{ match.away_logo }}" class="team-logo">
             <span class="team-name">{{ match.away_team }}</span>
+            {% if match.away_form %}
+            <span class="form-dots">{% for r in match.away_form %}<span class="form-dot form-{{ r|lower }}">{{ r }}</span>{% endfor %}</span>
+            {% endif %}
           </div>
         </a>
       </div>

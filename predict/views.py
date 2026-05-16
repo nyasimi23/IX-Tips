@@ -55,7 +55,7 @@ from .utils import (
     process_match_data,
     scoreline_predictions,
     update_actuals_for_top_picks,
-    
+    get_team_recent_form,
 )
 from .generate_logo_mapping import TEAM_LOGOS
 
@@ -2611,6 +2611,8 @@ def predictions_view(request):
         display_data.append({
             "home_team": home_display_name,
             "away_team": away_display_name,
+            "home_form": get_team_recent_form(p.home_team, comp_code),
+            "away_form": get_team_recent_form(p.away_team, comp_code),
             "predicted_home_goals": p.predicted_home_goals,
             "predicted_away_goals": p.predicted_away_goals,
             "match_date": p.match_date.strftime("%Y-%m-%d"),

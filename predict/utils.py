@@ -1333,6 +1333,19 @@ def train_competition_models(training_df, lookback=8):
     return model_home, model_away, model_context
 
 
+def get_team_recent_form(team_name, competition_code, limit=5):
+    """Return list of recent result letters oldest→newest, e.g. ['W','D','L','W','W']."""
+    cached_bundle = cache.get(model_cache_key(competition_code))
+    if not cached_bundle or len(cached_bundle) < 3:
+        return []
+    team_profiles = cached_bundle[2].get("team_profiles", {})
+    profile = team_profiles.get(team_name)
+    if not profile:
+        return []
+    points = profile.get("overall_points", [])[-limit:]
+    return ["W" if p == 3 else "D" if p == 1 else "L" for p in points]
+
+
 def get_or_train_model_bundle(competition_code, force_refresh=False):
     cache_key = model_cache_key(competition_code)
     if not force_refresh:
