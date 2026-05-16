@@ -113,7 +113,9 @@ body.dark {
 }
 
 .menu-link {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   padding: 4px 6px;
   border-radius: 6px;
   color: var(--text-secondary);
@@ -123,7 +125,17 @@ body.dark {
   transition: background 0.15s ease, color 0.15s ease;
   white-space: nowrap;
   overflow: hidden;
+}
+
+.menu-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.menu-text {
+  overflow: hidden;
   text-overflow: ellipsis;
+  transition: opacity 0.2s ease, width 0.2s ease;
 }
 
 .menu-link:hover {
@@ -135,6 +147,10 @@ body.dark {
   background: var(--light-blue);
   color: var(--blue, #3C91E6);
 }
+
+/* BMC: show full image by default, hide coffee icon */
+.bmc-collapsed { display: none; }
+.bmc-expanded { display: block; }
 
 .support-card img {
   max-width: 100%;
