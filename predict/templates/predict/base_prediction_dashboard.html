@@ -126,6 +126,44 @@
     /* Pages with no right sidebar */
     body.no-right-sidebar .dash-right { display: none; }
     body.no-right-sidebar #league-toggle { display: none; }
+
+    /* ── Mobile: hide sidebars, full-width center ── */
+    @media (max-width: 767px) {
+      .dash-left { flex: 0 0 0 !important; width: 0 !important; opacity: 0 !important; pointer-events: none !important; overflow: hidden !important; }
+      .dash-right { display: none !important; }
+      #menu-toggle { display: none !important; }
+      #league-toggle { display: none !important; }
+      .dash-row { padding: 6px; gap: 0; }
+      .top-navbar { padding: 0 10px; }
+      .page-shell { padding-bottom: 60px !important; }
+
+      /* Bottom nav for mobile navigation */
+      .mobile-bottom-nav {
+        display: flex !important;
+      }
+    }
+    @media (min-width: 768px) {
+      .mobile-bottom-nav { display: none !important; }
+    }
+
+    /* Bottom nav link style */
+    .bnav-link {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      color: var(--text-secondary, #64748b);
+      text-decoration: none;
+      font-size: 0.58rem;
+      font-weight: 600;
+      min-width: 44px;
+      padding: 2px 4px;
+      border-radius: 8px;
+      transition: color 0.15s;
+    }
+    .bnav-link i { font-size: 1.25rem; }
+    .bnav-link.active { color: var(--blue, #3C91E6); }
+    .bnav-link:hover { color: var(--text-primary, #0f172a); }
   </style>
 </head>
 <body class="{% block body_class %}{% endblock %}" style="background: var(--bg-primary) !important; color: var(--text-primary); transition: background-color 0.3s ease, color 0.3s ease;" data-bs-theme="light">
@@ -224,5 +262,16 @@
 </script>
 
 {% block extra_scripts %}{% endblock %}
+
+<!-- Mobile bottom nav -->
+<nav class="mobile-bottom-nav" style="display:none; position:fixed; bottom:0; left:0; right:0; z-index:600; background:var(--card-bg,#fff); border-top:1px solid var(--border-color,#e2e8f0); padding:6px 0 env(safe-area-inset-bottom,6px); justify-content:space-around; align-items:center;">
+  <a href="{% url 'predictions_view' %}" class="bnav-link {% if request.resolver_match.url_name == 'predictions_view' %}active{% endif %}"><i class='bx bx-football'></i>Predictions</a>
+  <a href="{% url 'top_picks' %}" class="bnav-link {% if request.resolver_match.url_name == 'top_picks' %}active{% endif %}"><i class='bx bxs-star'></i>Top Picks</a>
+  <a href="{% url 'correct_score' %}" class="bnav-link {% if request.resolver_match.url_name == 'correct_score' %}active{% endif %}"><i class='bx bx-target-lock'></i>Score</a>
+  <a href="{% url 'anytime_scorer' %}" class="bnav-link {% if request.resolver_match.url_name == 'anytime_scorer' %}active{% endif %}"><i class='bx bx-run'></i>Scorer</a>
+  <a href="{% url 'market_picks' %}" class="bnav-link {% if request.resolver_match.url_name == 'market_picks' %}active{% endif %}"><i class='bx bx-trending-up'></i>Markets</a>
+  <a href="{% url 'combo_builder' %}" class="bnav-link {% if request.resolver_match.url_name == 'combo_builder' %}active{% endif %}"><i class='bx bx-layer'></i>Combo</a>
+  <a href="{% url 'won_slips' %}" class="bnav-link {% if request.resolver_match.url_name == 'won_slips' %}active{% endif %}"><i class='bx bx-trophy'></i>Won</a>
+</nav>
 </body>
 </html>
