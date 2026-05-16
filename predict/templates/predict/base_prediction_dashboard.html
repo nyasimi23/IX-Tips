@@ -162,7 +162,7 @@
     }
 
     var saved = localStorage.getItem('dashMenuState');
-    setState(saved === '1');
+    setState(saved !== '0');
 
     btn.addEventListener('click', function() {
       setState(!row.classList.contains('menu-collapsed'));
