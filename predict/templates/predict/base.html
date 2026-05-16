@@ -15,6 +15,9 @@
       <i class='bx bxs-smile bx-lg'></i>
       <span class="text">AdminHub</span>
     </a>
+    <button id="sidebar-toggle" title="Toggle sidebar" aria-label="Toggle sidebar">
+      <i class='bx bx-chevron-left' id="sidebar-toggle-icon"></i>
+    </button>
     <ul class="side-menu top">
       <li class="{% if request.path == '/admin-dashboard/' %}active{% endif %}">
         <a href="{% url 'admin-dashboard' %}">
@@ -60,7 +63,7 @@
 
   <section id="content">
     <nav>
-      <i class='bx bx-menu bx-sm'></i>
+      <i class='bx bx-menu bx-sm' style="display:none;"></i>
       <a href="#" class="nav-link">Categories</a>
       <form action="#" class="d-none d-md-inline">
         <div class="form-input">
@@ -93,29 +96,34 @@
 
 allSideMenu.forEach(item => {
     const li = item.parentElement;
-
     item.addEventListener('click', function () {
         allSideMenu.forEach(i => {
             i.parentElement.classList.remove('active');
-        })
+        });
         li.classList.add('active');
-    })
+    });
 });
 
 // TOGGLE SIDEBAR
-const menuBar = document.querySelector('#content nav .bx.bx-menu');
 const sidebar = document.getElementById('sidebar');
+const sidebarToggle = document.getElementById('sidebar-toggle');
+const sidebarToggleIcon = document.getElementById('sidebar-toggle-icon');
 
-// Sidebar toggle
-menuBar.addEventListener('click', function () {
+function updateToggleIcon() {
+    const isHidden = sidebar.classList.contains('hide');
+    sidebarToggleIcon.className = isHidden ? 'bx bx-chevron-right' : 'bx bx-chevron-left';
+    sidebarToggle.classList.toggle('sidebar-hidden', isHidden);
+}
+
+sidebarToggle.addEventListener('click', function () {
     if (window.innerWidth <= 576) {
         sidebar.classList.toggle('show');
     } else {
         sidebar.classList.toggle('hide');
     }
+    updateToggleIcon();
 });
 
-// Adjust sidebar on load and resize
 function adjustSidebar() {
     if (window.innerWidth <= 576) {
         sidebar.classList.remove('hide');
@@ -127,6 +135,7 @@ function adjustSidebar() {
         sidebar.classList.remove('hide');
         sidebar.classList.remove('show');
     }
+    updateToggleIcon();
 }
 
 window.addEventListener('load', adjustSidebar);

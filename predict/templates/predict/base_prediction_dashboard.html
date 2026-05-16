@@ -11,11 +11,87 @@
   {% block extra_head_links %}{% endblock %}
   <style>
     {% block page_styles %}{% endblock %}
+
+    /* ── 3-column layout — never wraps ── */
+    .dash-row {
+      display: flex;
+      flex-wrap: nowrap;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px;
+    }
+    .dash-left {
+      flex: 0 0 160px;
+      width: 160px;
+      min-width: 0;
+      transition: flex 0.3s ease, width 0.3s ease, opacity 0.3s ease;
+      overflow: hidden;
+    }
+    .dash-center {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .dash-right {
+      flex: 0 0 195px;
+      width: 195px;
+      min-width: 0;
+    }
+
+    /* Collapsed: left sidebar shrinks to zero */
+    .dash-row.menu-collapsed .dash-left {
+      flex: 0 0 0px;
+      width: 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* ── Top navbar ── */
+    .top-navbar {
+      height: 48px;
+      background: var(--card-bg, #fff);
+      border-bottom: 1px solid var(--border-color, #e2e8f0);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: background 0.3s ease;
+    }
+
+    /* ── Sidebar toggle tab — fixed at left sidebar's right edge ── */
+    #menu-toggle {
+      position: fixed;
+      top: 50vh;
+      left: 170px;   /* dash-left 160px + 10px padding */
+      transform: translateY(-50%);
+      z-index: 500;
+      width: 18px;
+      height: 44px;
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border-color, #e2e8f0);
+      border-left: none;
+      border-radius: 0 8px 8px 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-secondary, #64748b);
+      font-size: 13px;
+      padding: 0;
+      transition: left 0.3s ease, background 0.2s, color 0.2s;
+    }
+    #menu-toggle:hover { background: var(--hover-bg); color: var(--blue, #3C91E6); }
+    #menu-toggle.sidebar-collapsed { left: 10px; }
+
+    .page-shell { margin-bottom: 0; }
   </style>
 </head>
 <body class="{% block body_class %}{% endblock %}" style="background: var(--bg-primary) !important; color: var(--text-primary); transition: background-color 0.3s ease, color 0.3s ease;" data-bs-theme="light">
-<div class="top-navbar d-flex justify-content-between align-items-center px-3 py-2">
-  <div class="d-flex align-items-center">
+
+<div class="top-navbar">
+  <div class="d-flex align-items-center gap-2">
     {% block navbar_left %}{% endblock %}
   </div>
   <div class="d-flex align-items-center gap-3">
@@ -27,40 +103,66 @@
   </div>
 </div>
 
-<div class="container-fluid py-3">
-  <div class="row g-3">
-    <div class="col-lg-2 col-md-3 sidebar-column">
-      {% block left_sidebar %}{% endblock %}
-    </div>
+<!-- Toggle tab — lives outside the row so it's always visible -->
+<button id="menu-toggle" title="Toggle menu" aria-label="Toggle menu">
+  <i class='bx bx-chevron-left' id="menu-toggle-icon"></i>
+</button>
 
-    <div class="col-lg-8 col-md-6 content-main">
-      <div class="page-shell">
-        {% block page_header %}{% endblock %}
-        {% block page_content %}{% endblock %}
-      </div>
-    </div>
+<div class="dash-row" id="dash-row">
 
+  <div class="dash-left" id="dash-left">
+    {% block left_sidebar %}{% endblock %}
+  </div>
+
+  <div class="dash-center">
+    <div class="page-shell">
+      {% block page_header %}{% endblock %}
+      {% block page_content %}{% endblock %}
+    </div>
+  </div>
+
+  <div class="dash-right">
     {% block right_sidebar %}{% endblock %}
   </div>
+
 </div>
 
 <script>
 (function() {
-    function applyTheme(isDark) {
-        document.body.classList.toggle('dark', isDark);
-        localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  /* Theme */
+  function applyTheme(isDark) {
+    document.body.classList.toggle('dark', isDark);
+    localStorage.setItem('theme', isDark ? 'dark' : 'light');
+  }
+  applyTheme(localStorage.getItem('theme') === 'dark');
+  var themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function() {
+      applyTheme(!document.body.classList.contains('dark'));
+    });
+  }
+
+  /* Sidebar toggle */
+  document.addEventListener('DOMContentLoaded', function() {
+    var row    = document.getElementById('dash-row');
+    var btn    = document.getElementById('menu-toggle');
+    var icon   = document.getElementById('menu-toggle-icon');
+    if (!row || !btn) return;
+
+    function setState(collapsed) {
+      row.classList.toggle('menu-collapsed', collapsed);
+      btn.classList.toggle('sidebar-collapsed', collapsed);
+      if (icon) icon.className = collapsed ? 'bx bx-chevron-right' : 'bx bx-chevron-left';
+      localStorage.setItem('dashMenuState', collapsed ? '1' : '0');
     }
 
-    // Check for saved theme preference or default to light
-    const savedTheme = localStorage.getItem('theme');
-    applyTheme(savedTheme === 'dark');
+    var saved = localStorage.getItem('dashMenuState');
+    setState(saved === '1');
 
-    const themeToggle = document.getElementById('theme-toggle');
-    if (themeToggle) {
-        themeToggle.addEventListener('click', function () {
-            applyTheme(!document.body.classList.contains('dark'));
-        });
-    }
+    btn.addEventListener('click', function() {
+      setState(!row.classList.contains('menu-collapsed'));
+    });
+  });
 })();
 </script>
 

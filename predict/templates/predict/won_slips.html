@@ -50,15 +50,10 @@
   min-height: 42px;
   padding: 8px 14px;
   border-radius: 999px;
-  background: linear-gradient(135deg, #dcfce7 0%, #effcf5 100%);
-  border: 1px solid #86efac;
-  color: #047857;
+  background: var(--success-bg);
+  border: 1px solid var(--success-border);
+  color: var(--success-text);
   font-weight: 800;
-}
-body.dark .slip-badge {
-  background: rgba(4, 120, 87, 0.15);
-  border-color: rgba(134, 239, 172, 0.4);
-  color: #86efac;
 }
 .meta-line {
   color: var(--text-secondary);
@@ -82,7 +77,13 @@ body.dark .slip-badge {
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-secondary);
-  background: var(--table-header-bg, #f8fafc);
+  background: var(--table-header-bg);
+}
+.legs-table tbody tr {
+  transition: background 0.15s ease;
+}
+.legs-table tbody tr:hover {
+  background: var(--hover-bg);
 }
 .legs-table tr:last-child td {
   border-bottom: none;
@@ -181,7 +182,7 @@ body.dark .slip-badge {
   <div class="slip-card">
     <div class="slip-top">
       <div>
-        <div class="fw-bold fs-5">{{ slip.variant_label }}</div>
+        <div style="font-size: 1rem; font-weight: 800; color: var(--text-primary);">{{ slip.variant_label }}</div>
         <div class="meta-line">{{ slip.match_date }} · {{ slip.legs_count }} legs{% if slip.combined_odds %} · {{ slip.combined_odds|floatformat:2 }} combined odds{% endif %}</div>
       </div>
       <div class="slip-badge">

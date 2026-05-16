@@ -1555,7 +1555,7 @@ def train_model_view(request):
         if not competition_code:
             message = "Please select a competition."
         else:
-            seasons = [2019, 2020, 2021, 2022, 2023, 2024, 2025]
+            seasons = list(range(2019, datetime.now().year + 1))
             all_data = []
             for season in seasons:
                 data = fetch_matches_by_season(API_KEY, competition_code, season)
@@ -2681,11 +2681,44 @@ def build_correct_score_rows(match_date_str=None):
     predictions = predictions.order_by("match_date", "competition", "home_team")
     rows = []
 
+    # Cache model bundles per competition to avoid re-loading for every fixture
+    _model_cache = {}
+
+    def _raw_goal_expectations(prediction):
+        """
+        Re-run the ML model to get raw float goal expectations (e.g. 1.72, 0.83)
+        instead of the rounded integers stored in the DB (e.g. 2, 1).
+        This produces much more realistic Poisson scoreline distributions.
+        Falls back to the DB integer values if the model isn't available.
+        """
+        comp_code = prediction.competition
+        if comp_code not in _model_cache:
+            try:
+                bundle = get_or_train_model_bundle(comp_code)
+                _model_cache[comp_code] = bundle
+            except Exception:
+                _model_cache[comp_code] = None
+
+        bundle = _model_cache.get(comp_code)
+        if bundle is None:
+            # Fallback: use DB integers (the old behaviour)
+            return float(prediction.predicted_home_goals or 0), float(prediction.predicted_away_goals or 0)
+
+        model_home, model_away, model_context = bundle
+        try:
+            from .utils import build_fixture_features
+            import numpy as np
+            X = build_fixture_features(prediction.home_team, prediction.away_team, model_context).fillna(0)
+            raw_home = float(np.clip(model_home.predict(X)[0], 0, 10))
+            raw_away = float(np.clip(model_away.predict(X)[0], 0, 10))
+            return raw_home, raw_away
+        except Exception:
+            return float(prediction.predicted_home_goals or 0), float(prediction.predicted_away_goals or 0)
+
     for prediction in predictions:
-        top_scores = scoreline_predictions(
-            prediction.predicted_home_goals,
-            prediction.predicted_away_goals,
-        )
+        raw_home, raw_away = _raw_goal_expectations(prediction)
+
+        top_scores = scoreline_predictions(raw_home, raw_away)
         if not top_scores:
             continue
 

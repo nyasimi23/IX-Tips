@@ -35,37 +35,43 @@ ODDS_PROVIDER = os.getenv("ODDS_PROVIDER", "the-odds-api")
 logger = logging.getLogger(__name__)
 
 
-def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=None, top_n=3):
-    home_rate = max(float(predicted_home_goals or 0), 0.1)
-    away_rate = max(float(predicted_away_goals or 0), 0.1)
+def scoreline_predictions(predicted_home_goals, predicted_away_goals, max_goals=None, top_n=5):
+    home_rate = max(float(predicted_home_goals or 0), 0.15)
+    away_rate = max(float(predicted_away_goals or 0), 0.15)
     if max_goals is None:
-        max_goals = max(4, int(math.ceil(max(home_rate, away_rate) + 3)))
+        max_goals = max(5, int(math.ceil(max(home_rate, away_rate) + 3)))
 
     def poisson_pmf(goals, lam):
         return float(np.exp(-lam) * (lam ** goals) / math.factorial(goals))
 
-    def low_score_adjustment(home_goals, away_goals):
-        total_goals = home_rate + away_rate
-        closeness = max(0.0, 1.0 - min(abs(home_rate - away_rate), 1.5) / 1.5)
-        low_goal_bias = max(0.0, 1.0 - min(total_goals, 3.2) / 3.2)
-        boost = 0.12 + (0.18 * closeness) + (0.15 * low_goal_bias)
-        suppress = 0.10 + (0.10 * (1.0 - closeness))
+    def score_adjustment(home_goals, away_goals):
+        """
+        Light adjustment for known football tendencies:
+        - Draws (especially 0-0 and 1-1) are slightly more common than pure
+          Poisson suggests due to tactical/psychological factors.
+        - Very high scorelines are slightly less likely in practice.
+        Keep adjustments subtle so the model stays realistic.
+        """
+        total_expected = home_rate + away_rate
+        closeness = max(0.0, 1.0 - min(abs(home_rate - away_rate), 2.0) / 2.0)
 
         if home_goals == 0 and away_goals == 0:
-            return 1.0 + boost
-        if home_goals == 1 and away_goals == 1:
-            return 1.0 + (boost * 0.85)
-        if (home_goals, away_goals) in {(1, 0), (0, 1)}:
-            return 1.0 + (boost * 0.55)
-        if (home_goals, away_goals) in {(0, 2), (2, 0)}:
-            return 1.0 - (suppress * 0.35)
+            # Slight 0-0 boost only when expected goals are low and teams are close
+            low_goal_factor = max(0.0, 1.0 - total_expected / 3.0)
+            return 1.0 + (0.06 * closeness * low_goal_factor)
+        if home_goals == away_goals:
+            # Very slight draw boost
+            return 1.0 + (0.04 * closeness)
+        if home_goals + away_goals >= 6:
+            # Slight suppression of extreme scorelines
+            return 0.92
         return 1.0
 
     candidates = []
     for home_goals in range(max_goals + 1):
         for away_goals in range(max_goals + 1):
             probability = poisson_pmf(home_goals, home_rate) * poisson_pmf(away_goals, away_rate)
-            probability *= low_score_adjustment(home_goals, away_goals)
+            probability *= score_adjustment(home_goals, away_goals)
             candidates.append({
                 "score": f"{home_goals}-{away_goals}",
                 "home_goals": home_goals,

@@ -6,7 +6,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css"/>
 {% endblock %}
 
-{% block body_class %}menu-expanded{% endblock %}
+{% block body_class %}{% endblock %}
 
 {% block page_styles %}
 {% include "predict/partials/prediction_shell_styles.html" %}
@@ -161,25 +161,6 @@
   color: var(--text-secondary);
   font-size: 0.8em;
 }
-body.menu-expanded .match-info .match-link {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 6px;
-}
-body.menu-expanded .match-info .team-display {
-  justify-content: flex-start;
-  width: 100%;
-}
-body.menu-expanded .match-info .vs-separator { display: none; }
-body.menu-collapsed .sidebar-column { display: none; }
-body.menu-collapsed .content-main {
-  flex: 0 0 76%;
-  max-width: 76%;
-}
-body.menu-collapsed .league-sidebar {
-  flex: 0 0 24%;
-  max-width: 24%;
-}
 .comp-logo {
   height: 14px;
   object-fit: contain;
@@ -282,11 +263,6 @@ body.menu-collapsed .league-sidebar {
     padding: 16px;
     border-radius: 18px;
   }
-  body.menu-collapsed .content-main,
-  body.menu-collapsed .league-sidebar {
-    flex: 0 0 100%;
-    max-width: 100%;
-  }
   .confidence-bar-container {
     width: 80px;
     height: 16px;
@@ -306,7 +282,6 @@ body.menu-collapsed .league-sidebar {
     <div class="section-subtitle">Daily match outcomes with projected scores and settled results.</div>
   </div>
   <div class="action-row">
-    <button type="button" id="menu-toggle" class="toolbar-button">Hide Menu</button>
     <form id="filter-form" method="get" class="d-flex gap-2">
       <input type="text" id="date-picker" name="match_date" placeholder="Select date" class="form-control date-input" readonly value="{{ selected_date }}">
       <input type="hidden" name="competition" value="{{ selected_competition }}">
@@ -318,7 +293,7 @@ body.menu-collapsed .league-sidebar {
 {% block page_content %}
 <div class="predictions-grid">
   <div class="grid-header">
-    <div class="grid-col">Date</div>
+    <div class="grid-col">Time</div>
     <div class="grid-col">Competition</div>
     <div class="grid-col">Match</div>
     <div class="grid-col">Score</div>
@@ -334,7 +309,6 @@ body.menu-collapsed .league-sidebar {
     {% for match in predictions %}
     <div class="grid-row">
       <div class="grid-col date-time">
-        <div class="date">{{ match.match_date }}</div>
         <div class="time">{{ match.match_time }}</div>
       </div>
 
@@ -437,20 +411,6 @@ body.menu-collapsed .league-sidebar {
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const body = document.body;
-  const menuToggle = document.getElementById('menu-toggle');
-  const menuState = localStorage.getItem('predictionsMenuState') || 'expanded';
-  body.classList.remove('menu-expanded', 'menu-collapsed');
-  body.classList.add(menuState === 'collapsed' ? 'menu-collapsed' : 'menu-expanded');
-  if (menuToggle) {
-    menuToggle.textContent = body.classList.contains('menu-collapsed') ? 'Show Menu' : 'Hide Menu';
-    menuToggle.addEventListener('click', function() {
-      const collapsed = body.classList.toggle('menu-collapsed');
-      body.classList.toggle('menu-expanded', !collapsed);
-      localStorage.setItem('predictionsMenuState', collapsed ? 'collapsed' : 'expanded');
-      menuToggle.textContent = collapsed ? 'Show Menu' : 'Hide Menu';
-    });
-  }
   const form = document.getElementById('filter-form');
   flatpickr("#date-picker", {
     altInput: true,

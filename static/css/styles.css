@@ -199,7 +199,7 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 	position: fixed;
 	top: 0;
 	left: 0;
-	width: 188px;
+	width: 150px;
 	height: 100%;
 	background: var(--sidebar-bg);
 	z-index: 2000;
@@ -213,7 +213,37 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 	display: none;
 }
 #sidebar.hide {
-	width: 60px;
+	width: 52px;
+}
+
+/* Toggle tab — floats on the right edge of the sidebar */
+#sidebar-toggle {
+	position: fixed;
+	top: 50%;
+	left: 150px;
+	transform: translateY(-50%);
+	z-index: 2100;
+	width: 18px;
+	height: 48px;
+	background: var(--sidebar-bg);
+	border: 1px solid var(--border-color);
+	border-left: none;
+	border-radius: 0 8px 8px 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	cursor: pointer;
+	color: var(--text-secondary);
+	font-size: 13px;
+	transition: left .3s ease, background .2s ease, color .2s ease;
+}
+#sidebar-toggle:hover {
+	background: var(--hover-bg);
+	color: var(--blue);
+}
+/* JS adds this class when sidebar is collapsed */
+#sidebar-toggle.sidebar-hidden {
+	left: 52px;
 }
 #sidebar .brand {
 	font-size: 24px;
@@ -232,7 +262,7 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 	border-bottom: 1px solid var(--border-color);
 }
 #sidebar .brand .bx {
-	min-width: 60px;
+	min-width: 52px;
 	display: flex;
 	justify-content: center;
 }
@@ -290,7 +320,7 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 	color: var(--blue);
 }
 #sidebar.hide .side-menu li a {
-	width: calc(48px - (4px * 2));
+	width: calc(52px - (4px * 2));
 	transition: width .3s ease;
 }
 #sidebar .side-menu li a.logout {
@@ -300,7 +330,7 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 	color: var(--blue);
 }
 #sidebar .side-menu li a .bx {
-	min-width: calc(60px  - ((4px + 6px) * 2));
+	min-width: calc(52px - ((4px + 6px) * 2));
 	display: flex;
 	justify-content: center;
 }
@@ -326,13 +356,13 @@ html body.dark .rounded-2xl { background-color: var(--card-bg) !important; }
 /* CONTENT */
 #content {
 	position: relative;
-	width: calc(100% - 188px);
-	left: 188px;
+	width: calc(100% - 150px);
+	left: 150px;
 	transition: .3s ease;
 }
 #sidebar.hide ~ #content {
-	width: calc(100% - 60px);
-	left: 60px;
+	width: calc(100% - 52px);
+	left: 52px;
 }
 
 
@@ -1163,7 +1193,7 @@ body.dark .form-select:focus {
         width: 180px;
     }
 	#sidebar {
-		width: 60px;
+		width: 52px;
 	}
 	#sidebar .side-menu li a span,
 	#sidebar .brand span {
@@ -1171,8 +1201,12 @@ body.dark .form-select:focus {
 	}
 
 	#content {
-		width: calc(100% - 60px);
-		left: 60px;
+		width: calc(100% - 52px);
+		left: 52px;
+	}
+
+	#sidebar-toggle {
+		left: 52px;
 	}
 
 	#content nav .nav-link {
@@ -1207,9 +1241,13 @@ body.dark .form-select:focus {
 		border-right: none;
 	}
 	#sidebar.show {
-		width: 188px;
+		width: 150px;
 		padding: initial;
 		border-right: 1px solid var(--border-color);
+	}
+	#sidebar.show ~ #sidebar-toggle,
+	#sidebar-toggle:not(.sidebar-hidden) {
+		left: 150px;
 	}
 	#sidebar .side-menu li a span,
 	#sidebar .brand span {
