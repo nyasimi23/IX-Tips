@@ -102,6 +102,11 @@
   background: var(--light-blue);
   color: var(--blue, #1d4ed8);
 }
+.scoreline-chip.correct {
+  background: rgba(22,163,74,0.15);
+  color: #16a34a;
+  border: 1px solid rgba(22,163,74,0.35);
+}
 .team-logo { width: 28px; height: 28px; object-fit: contain; }
 .meta-line { color: var(--text-secondary); font-size: 0.92rem; }
 .competition-line {
@@ -110,6 +115,38 @@
   color: var(--text-primary);
   letter-spacing: 0.02em;
 }
+.actual-result-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+.actual-result-badge.won { background: rgba(22,163,74,0.12); color: #16a34a; border: 1px solid rgba(22,163,74,0.3); }
+.actual-result-badge.lost { background: rgba(220,38,38,0.1); color: #dc2626; border: 1px solid rgba(220,38,38,0.25); }
+/* Stats strip */
+.cs-stats-strip {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 18px;
+}
+.cs-stat-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--card-bg);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+}
+.cs-stat-chip .chip-val { color: var(--blue, #3C91E6); font-size: 1rem; }
+.cs-stat-chip.green .chip-val { color: #16a34a; }
 @media (max-width: 767px) {
   .fixture-card { border-radius: 18px; padding: 14px; }
   .team-name { font-size: 0.96rem; }
@@ -131,6 +168,26 @@
 {% endblock %}
 
 {% block page_content %}
+
+{% if score_stats.finished %}
+<div class="cs-stats-strip">
+  <div class="cs-stat-chip">
+    <span>Settled</span>
+    <span class="chip-val">{{ score_stats.finished }}</span>
+  </div>
+  <div class="cs-stat-chip green">
+    <span>Top Pick ✓</span>
+    <span class="chip-val">{{ score_stats.top_correct }}</span>
+    {% if score_stats.top_accuracy %}<span style="color:var(--text-secondary);font-size:0.72rem;">({{ score_stats.top_accuracy }}%)</span>{% endif %}
+  </div>
+  <div class="cs-stat-chip green">
+    <span>Any Pick ✓</span>
+    <span class="chip-val">{{ score_stats.any_correct }}</span>
+    {% if score_stats.any_accuracy %}<span style="color:var(--text-secondary);font-size:0.72rem;">({{ score_stats.any_accuracy }}%)</span>{% endif %}
+  </div>
+</div>
+{% endif %}
+
 {% if predictions %}
   <div class="d-grid gap-3">
     {% for match in predictions %}
@@ -140,7 +197,18 @@
           <div class="meta-line">{{ match.match_date }} {% if match.match_time %}{{ match.match_time }}{% endif %}</div>
           <div class="competition-line">{{ match.competition }}</div>
         </div>
-        <div class="best-score-pill">Best Score: {{ match.top_score.score }}</div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+          {% if match.is_finished and match.actual_score %}
+            {% if match.top_correct %}
+              <span class="actual-result-badge won"><i class='bx bx-check-circle'></i>Won · {{ match.actual_score }}</span>
+            {% elif match.any_correct %}
+              <span class="actual-result-badge won"><i class='bx bx-check-circle'></i>In picks · {{ match.actual_score }}</span>
+            {% else %}
+              <span class="actual-result-badge lost"><i class='bx bx-x-circle'></i>{{ match.actual_score }}</span>
+            {% endif %}
+          {% endif %}
+          <div class="best-score-pill">Best: {{ match.top_score.score }}</div>
+        </div>
       </div>
       <div class="match-row">
         <div class="team-block">
@@ -157,9 +225,9 @@
         <a href="{{ match.detail_url }}" class="pill-link">View Match</a>
       </div>
       <div class="scoreline-list">
-        <span class="scoreline-chip primary">{{ match.top_score.score }}</span>
+        <span class="scoreline-chip {% if match.top_correct %}correct{% else %}primary{% endif %}">{{ match.top_score.score }}</span>
         {% for scoreline in match.other_scores %}
-        <span class="scoreline-chip">{{ scoreline.score }}</span>
+          <span class="scoreline-chip {% if match.is_finished and match.actual_score == scoreline.score %}correct{% endif %}">{{ scoreline.score }}</span>
         {% endfor %}
       </div>
     </div>

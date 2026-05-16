@@ -2749,6 +2749,15 @@ def build_correct_score_rows(match_date_str=None):
 
         meta_home = get_team_metadata(prediction.home_team)
         meta_away = get_team_metadata(prediction.away_team)
+
+        is_finished = prediction.status == "FINISHED"
+        actual_home = prediction.actual_home_goals
+        actual_away = prediction.actual_away_goals
+        actual_score_str = f"{actual_home}-{actual_away}" if (is_finished and actual_home is not None and actual_away is not None) else None
+        top_score_str = top_scores[0]["score"] if top_scores else None
+        top_correct = actual_score_str is not None and top_score_str == actual_score_str
+        any_correct = actual_score_str is not None and any(s["score"] == actual_score_str for s in top_scores)
+
         rows.append({
             "match_date": prediction.match_date.strftime("%Y-%m-%d"),
             "match_time": get_cached_kickoff_time(
@@ -2769,9 +2778,22 @@ def build_correct_score_rows(match_date_str=None):
             "top_score": top_scores[0],
             "other_scores": top_scores[1:],
             "detail_url": build_match_detail_url(prediction, source="correct_score"),
+            "is_finished": is_finished,
+            "actual_score": actual_score_str,
+            "top_correct": top_correct,
+            "any_correct": any_correct,
         })
 
-    return selected_date, rows
+    finished_rows = [r for r in rows if r["is_finished"] and r["actual_score"] is not None]
+    stats = {
+        "finished": len(finished_rows),
+        "top_correct": sum(1 for r in finished_rows if r["top_correct"]),
+        "any_correct": sum(1 for r in finished_rows if r["any_correct"]),
+    }
+    stats["top_accuracy"] = round(stats["top_correct"] / stats["finished"] * 100, 1) if stats["finished"] else None
+    stats["any_accuracy"] = round(stats["any_correct"] / stats["finished"] * 100, 1) if stats["finished"] else None
+
+    return selected_date, rows, stats
 
 
 def build_anytime_scorer_rows(match_date_str=None):
@@ -2885,13 +2907,14 @@ def build_anytime_scorer_rows(match_date_str=None):
 
 
 def correct_score_view(request):
-    match_date, rows = build_correct_score_rows(request.GET.get("match_date"))
+    match_date, rows, score_stats = build_correct_score_rows(request.GET.get("match_date"))
     selected_date = match_date or timezone.localdate().isoformat()
     selected_code = request.GET.get("competition", "PL")
     league_table = get_league_table(selected_code)
 
     return render(request, "predict/correct_score.html", {
         "predictions": rows,
+        "score_stats": score_stats,
         "selected_date": selected_date,
         "league_table": league_table,
         "competitions": competitions,
@@ -3268,7 +3291,7 @@ def export_top_picks(request, format):
 
 
 def export_correct_score(request, format):
-    match_date, rows = build_correct_score_rows(request.GET.get("match_date"))
+    match_date, rows, _ = build_correct_score_rows(request.GET.get("match_date"))
     match_date = match_date or timezone.localdate().isoformat()
 
     if format == "csv":
