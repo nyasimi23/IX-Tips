@@ -122,6 +122,10 @@
     #league-toggle.league-expanded { right: 380px; }  /* dash-right 370px + 10px */
 
     .page-shell { margin-bottom: 0; }
+
+    /* Pages with no right sidebar */
+    body.no-right-sidebar .dash-right { display: none; }
+    body.no-right-sidebar #league-toggle { display: none; }
   </style>
 </head>
 <body class="{% block body_class %}{% endblock %}" style="background: var(--bg-primary) !important; color: var(--text-primary); transition: background-color 0.3s ease, color 0.3s ease;" data-bs-theme="light">
