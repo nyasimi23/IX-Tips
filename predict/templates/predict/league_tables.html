@@ -2,18 +2,13 @@
   <div class="sidebar-right">
     <div class="d-flex justify-content-between align-items-center mb-2">
       <h5>League Table</h5>
-      <div class="d-flex align-items-center gap-1">
-        <button id="lt-expand-btn" title="Show full stats" onclick="toggleLeagueExpand()" style="background:none;border:none;padding:2px 4px;cursor:pointer;color:var(--text-secondary);font-size:1rem;border-radius:4px;">
-          <i class='bx bx-expand-alt' id="lt-expand-icon"></i>
-        </button>
-        <form method="get" class="ms-1">
-          <select id="competition-select" name="competition" class="form-select form-select-sm" onchange="this.form.submit()">
-            {% for code, name in competitions.items %}
-              <option value="{{ code }}" {% if selected_competition == code %}selected{% endif %}>{{ name }}</option>
-            {% endfor %}
-          </select>
-        </form>
-      </div>
+      <form method="get">
+        <select id="competition-select" name="competition" class="form-select form-select-sm" onchange="this.form.submit()">
+          {% for code, name in competitions.items %}
+            <option value="{{ code }}" {% if selected_competition == code %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </form>
     </div>
     <div id="league-table-container" class="table-responsive">
       <table class="table table-sm table-striped table-bordered mb-0" style="font-size: 0.78rem;">
@@ -72,21 +67,3 @@ html body.dark .table th {
 }
 </style>
 
-<script>
-function toggleLeagueExpand() {
-  var row  = document.getElementById('dash-row');
-  var icon = document.getElementById('lt-expand-icon');
-  if (!row) return;
-  var expanded = row.classList.toggle('league-expanded');
-  icon.className = expanded ? 'bx bx-collapse-alt' : 'bx bx-expand-alt';
-  localStorage.setItem('ltExpanded', expanded ? '1' : '0');
-}
-document.addEventListener('DOMContentLoaded', function() {
-  if (localStorage.getItem('ltExpanded') === '1') {
-    var row  = document.getElementById('dash-row');
-    var icon = document.getElementById('lt-expand-icon');
-    if (row)  row.classList.add('league-expanded');
-    if (icon) icon.className = 'bx bx-collapse-alt';
-  }
-});
-</script>

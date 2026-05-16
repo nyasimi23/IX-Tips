@@ -96,6 +96,31 @@
     #menu-toggle:hover { background: var(--hover-bg); color: var(--blue, #3C91E6); }
     #menu-toggle.sidebar-collapsed { left: 54px; }
 
+    /* ── League table toggle tab — fixed at right panel's left edge ── */
+    #league-toggle {
+      position: fixed;
+      top: 50vh;
+      right: 205px;  /* dash-right 195px + 10px padding */
+      transform: translateY(-50%);
+      z-index: 500;
+      width: 18px;
+      height: 44px;
+      background: var(--card-bg, #fff);
+      border: 1px solid var(--border-color, #e2e8f0);
+      border-right: none;
+      border-radius: 8px 0 0 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      color: var(--text-secondary, #64748b);
+      font-size: 13px;
+      padding: 0;
+      transition: right 0.35s ease, background 0.2s, color 0.2s;
+    }
+    #league-toggle:hover { background: var(--hover-bg); color: var(--blue, #3C91E6); }
+    #league-toggle.league-expanded { right: 380px; }  /* dash-right 370px + 10px */
+
     .page-shell { margin-bottom: 0; }
   </style>
 </head>
@@ -117,6 +142,11 @@
 <!-- Left sidebar toggle -->
 <button id="menu-toggle" title="Toggle menu" aria-label="Toggle menu">
   <i class='bx bx-chevron-left' id="menu-toggle-icon"></i>
+</button>
+
+<!-- League table toggle -->
+<button id="league-toggle" title="Expand league table" aria-label="Toggle league table">
+  <i class='bx bx-chevron-left' id="league-toggle-icon"></i>
 </button>
 
 <div class="dash-row" id="dash-row">
@@ -169,6 +199,22 @@
     leftBtn.addEventListener('click', function() {
       setLeftState(!row.classList.contains('menu-collapsed'));
     });
+
+    /* ── League table toggle ── */
+    var leagueBtn  = document.getElementById('league-toggle');
+    var leagueIcon = document.getElementById('league-toggle-icon');
+    if (leagueBtn) {
+      function setLeagueState(expanded) {
+        row.classList.toggle('league-expanded', expanded);
+        leagueBtn.classList.toggle('league-expanded', expanded);
+        if (leagueIcon) leagueIcon.className = expanded ? 'bx bx-chevron-right' : 'bx bx-chevron-left';
+        localStorage.setItem('ltExpanded', expanded ? '1' : '0');
+      }
+      setLeagueState(localStorage.getItem('ltExpanded') === '1');
+      leagueBtn.addEventListener('click', function() {
+        setLeagueState(!row.classList.contains('league-expanded'));
+      });
+    }
   });
 })();
 </script>
