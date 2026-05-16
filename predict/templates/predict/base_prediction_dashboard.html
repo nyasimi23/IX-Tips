@@ -35,6 +35,12 @@
       flex: 0 0 195px;
       width: 195px;
       min-width: 0;
+      transition: flex 0.35s ease, width 0.35s ease;
+    }
+    /* League table expanded: right panel grows, center shrinks automatically */
+    .dash-row.league-expanded .dash-right {
+      flex: 0 0 370px;
+      width: 370px;
     }
 
     /* Collapsed: left sidebar shrinks to icon-only strip */
@@ -108,7 +114,7 @@
   </div>
 </div>
 
-<!-- Toggle tab — lives outside the row so it's always visible -->
+<!-- Left sidebar toggle -->
 <button id="menu-toggle" title="Toggle menu" aria-label="Toggle menu">
   <i class='bx bx-chevron-left' id="menu-toggle-icon"></i>
 </button>
@@ -147,25 +153,21 @@
     });
   }
 
-  /* Sidebar toggle */
   document.addEventListener('DOMContentLoaded', function() {
-    var row    = document.getElementById('dash-row');
-    var btn    = document.getElementById('menu-toggle');
-    var icon   = document.getElementById('menu-toggle-icon');
-    if (!row || !btn) return;
+    var row     = document.getElementById('dash-row');
+    var leftBtn = document.getElementById('menu-toggle');
+    var leftIcon= document.getElementById('menu-toggle-icon');
+    if (!row || !leftBtn) return;
 
-    function setState(collapsed) {
+    function setLeftState(collapsed) {
       row.classList.toggle('menu-collapsed', collapsed);
-      btn.classList.toggle('sidebar-collapsed', collapsed);
-      if (icon) icon.className = collapsed ? 'bx bx-chevron-right' : 'bx bx-chevron-left';
+      leftBtn.classList.toggle('sidebar-collapsed', collapsed);
+      if (leftIcon) leftIcon.className = collapsed ? 'bx bx-chevron-right' : 'bx bx-chevron-left';
       localStorage.setItem('dashMenuState', collapsed ? '1' : '0');
     }
-
-    var saved = localStorage.getItem('dashMenuState');
-    setState(saved !== '0');
-
-    btn.addEventListener('click', function() {
-      setState(!row.classList.contains('menu-collapsed'));
+    setLeftState(localStorage.getItem('dashMenuState') !== '0');
+    leftBtn.addEventListener('click', function() {
+      setLeftState(!row.classList.contains('menu-collapsed'));
     });
   });
 })();
