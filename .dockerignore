@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.py[cod]
+*.pyc
+db.sqlite3
+*.pkl
+celerybeat-schedule
+celerybeat.pid
+*.log
+.DS_Store
+cache/
+.git/
