@@ -163,30 +163,35 @@ def refresh_live_match_data():
             continue
         status_updates += refresh_prediction_statuses(competition, match_date, force=True)
 
-        # Collect the six ranked markets once. Variants 1–3 use the
-        # original first four markets; variant 4 uses all six.
-        rank_six_candidates = _collect_top_pick_candidates(rank_limit=6)
+    # Collect the six ranked markets once. Variants 1–3 use the
+    # original first four markets; variant 4 uses all six.
+    rank_six_candidates = _collect_top_pick_candidates(rank_limit=6)
 
-        rank_four_candidates = {
-            date_str: [candidate for candidate in candidates if candidate["rank_index"] < 4]
-            for date_str, candidates in rank_six_candidates.items()
-        }
+    rank_four_candidates = {
+        date_str: [candidate for candidate in candidates if candidate["rank_index"] < 4]
+        for date_str, candidates in rank_six_candidates.items()
+    }
 
-        stored_top_picks = {}
+    stored_top_picks = {}
 
-        for variant in ("1", "2", "3", "4"):
-            candidates = rank_six_candidates if variant == "4" else rank_four_candidates
+    for variant in ("1", "2", "3", "4"):
+        # Preserve the original cleanup of all future picks for this variant.
+        TopPick.objects.filter(
+            variant=variant,
+            match_date__gte=today,
+        ).delete()
 
-            top_predictions = get_top_predictions_for_variant(
-                limit=20 if variant == "4" else 10,
-                variant=variant,
-                candidates_by_date=candidates,
-            )
+        candidates = rank_six_candidates if variant == "4" else rank_four_candidates
+        top_predictions = get_top_predictions_for_variant(
+            limit=20 if variant == "4" else 10,
+            variant=variant,
+            candidates_by_date=candidates,
+        )
 
-            stored_top_picks[variant] = store_top_pick_for_date(
-                top_predictions,
-                variant=variant,
-            )
+        stored_top_picks[variant] = store_top_pick_for_date(
+            top_predictions,
+            variant=variant,
+        )
     return {
         "status_updates": status_updates,
         "stored_top_picks": stored_top_picks,
