@@ -1744,8 +1744,11 @@ def _collect_top_pick_candidates(rank_limit=4):
 
 
 # ---------- top picks helpers ----------
-def get_top_predictions(limit=10, variant=1):
-    picks_by_date_candidates = _collect_top_pick_candidates(rank_limit=4)
+def get_top_predictions(limit=10, variant=1, candidates_by_date=None):
+    if candidates_by_date is None:
+        picks_by_date_candidates = _collect_top_pick_candidates(rank_limit=4)
+    else:
+        picks_by_date_candidates = candidates_by_date
     market_caps = {
         "1": 3,
         "2": 3,
@@ -1815,8 +1818,12 @@ def get_top_predictions(limit=10, variant=1):
     return picks_by_date
 
 
-def get_running_bet_predictions(limit=10):
-    base_predictions = get_top_predictions(limit=limit, variant=1)
+def get_running_bet_predictions(limit=10, candidates_by_date=None):
+    base_predictions = get_top_predictions(
+        limit=limit,
+        variant=1,
+        candidates_by_date=candidates_by_date,
+    )
     aggregated_candidates = []
 
     for date_str, picks in base_predictions.items():
@@ -1851,7 +1858,7 @@ def get_running_bet_predictions(limit=10):
     return dict(grouped)
 
 
-def get_mshipi_predictions(limit=20):
+def get_mshipi_predictions(limit=20, candidates_by_date=None):
     market_targets = [
         "1",
         "2",
@@ -1880,7 +1887,8 @@ def get_mshipi_predictions(limit=20):
         "Home Team Over 1.0": 2,
         "Away Team Over 1.0": 2,
     }
-    candidates_by_date = _collect_top_pick_candidates(rank_limit=6)
+    if candidates_by_date is None:
+        candidates_by_date = _collect_top_pick_candidates(rank_limit=6)
     aggregated_candidates = []
 
     for date_str, day_candidates in candidates_by_date.items():
@@ -1938,15 +1946,30 @@ def get_mshipi_predictions(limit=20):
     return dict(grouped)
 
 
-def get_top_predictions_for_variant(limit=10, variant="1"):
+def get_top_predictions_for_variant(
+    limit=10,
+    variant="1",
+    candidates_by_date=None,
+):
     variant = str(variant)
+
     if variant == "3":
-        return get_running_bet_predictions(limit=limit)
+        return get_running_bet_predictions(
+            limit=limit,
+            candidates_by_date=candidates_by_date,
+        )
+
     if variant == "4":
-        return get_mshipi_predictions(limit=max(limit, 20))
-    return get_top_predictions(limit=limit, variant=int(variant))
+        return get_mshipi_predictions(
+            limit=max(limit, 20),
+            candidates_by_date=candidates_by_date,
+        )
 
-
+    return get_top_predictions(
+        limit=limit,
+        variant=int(variant),
+        candidates_by_date=candidates_by_date,
+    )
 def store_top_pick_for_date(predictions_by_date, variant="1"):
     if TopPick is None:
         return 0
